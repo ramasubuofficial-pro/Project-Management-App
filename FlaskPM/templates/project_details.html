@@ -157,6 +157,82 @@
     </div>
 </div>
 
+<!-- Edit Task Modal -->
+<div id="edit-task-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6">
+        <h3 class="text-xl font-bold mb-4">Edit Task</h3>
+        <input type="hidden" id="edit-task-id">
+        <div class="space-y-4">
+            <input type="text" id="edit-task-title" placeholder="Task Title"
+                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition">
+
+            <textarea id="edit-task-desc" placeholder="Description" rows="3"
+                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition"></textarea>
+
+            <div class="flex space-x-4">
+                <div class="w-1/3">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Priority</label>
+                    <select id="edit-task-priority" class="w-full px-4 py-2 border rounded-lg bg-slate-50">
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                    </select>
+                </div>
+                <div class="w-1/3">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
+                    <select id="edit-task-status" class="w-full px-4 py-2 border rounded-lg bg-slate-50">
+                        <option value="To Do">To Do</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                </div>
+                <div class="w-1/3">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Assignee</label>
+                    <select id="edit-task-assignee" class="w-full px-4 py-2 border rounded-lg bg-slate-50">
+                        <option value="">Unassigned</option>
+                    </select>
+                </div>
+            </div>
+            <div class="relative">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Deadline</label>
+                <input type="text" id="edit-task-deadline" placeholder="Select Date..."
+                    class="w-full pl-10 pr-4 py-2 border rounded-lg bg-slate-50 focus:bg-white cursor-pointer">
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end space-x-3">
+            <button onclick="document.getElementById('edit-task-modal').classList.add('hidden')"
+                class="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+            <button onclick="updateTask()"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-500/30">Save
+                Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-confirm-modal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
+        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900 mb-2">Delete Task?</h3>
+        <p class="text-sm text-slate-500 mb-6">Are you sure you want to permanently delete this task? This action cannot
+            be undone.</p>
+        <div class="flex space-x-3 justify-center">
+            <button onclick="document.getElementById('delete-confirm-modal').classList.add('hidden')"
+                class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium transition">Cancel</button>
+            <button onclick="confirmDeleteTask()"
+                class="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium shadow-lg shadow-red-500/30 transition">Yes,
+                Delete</button>
+        </div>
+    </div>
+</div>
+
 <!-- Task Preview Modal -->
 <div id="task-preview-modal"
     class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
@@ -220,12 +296,33 @@
         </div>
 
         <!-- Footer -->
-        <div class="p-6 border-t border-slate-100 bg-slate-50 flex justify-end">
-            <!-- Future: Add Edit/Delete buttons here -->
-            <button onclick="document.getElementById('task-preview-modal').classList.add('hidden')"
-                class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-medium shadow-sm transition">
-                Close
+        <div class="p-6 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+            <button
+                onclick="deleteTask(currentPreviewTaskId); document.getElementById('task-preview-modal').classList.add('hidden')"
+                class="text-red-500 hover:text-red-700 font-medium px-2 transition flex items-center">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                    </path>
+                </svg>
+                Delete
             </button>
+            <div class="flex space-x-3">
+                <button onclick="document.getElementById('task-preview-modal').classList.add('hidden')"
+                    class="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-medium shadow-sm transition">
+                    Close
+                </button>
+                <button
+                    onclick="openEditTaskModal(currentPreviewTaskId); document.getElementById('task-preview-modal').classList.add('hidden')"
+                    class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium shadow-sm transition flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                        </path>
+                    </svg>
+                    Edit
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -233,7 +330,9 @@
 <script>
     const PROJECT_ID = '{{ project_id }}';
     let teamMembers = [];
-    let currentProjectTasks = []; // Store tasks for preview
+    let currentProjectTasks = [];
+    let currentPreviewTaskId = null;
+    let deleteTargetId = null;
 
     async function openCreateTaskModal() {
         // Reset Fields
@@ -278,12 +377,8 @@
         loadTasks();
 
         // Initialize Flatpickr
-        flatpickr("#task-deadline", {
-            enableTime: true,
-            dateFormat: "Y-m-d H:i",
-            minDate: "today",
-            theme: "dark" // Explicitly requested style look-alike
-        });
+        flatpickr("#task-deadline", { enableTime: true, dateFormat: "Y-m-d H:i", minDate: "today", theme: "dark" });
+        flatpickr("#edit-task-deadline", { enableTime: true, dateFormat: "Y-m-d H:i", theme: "dark" });
     });
 
     async function loadProjectDetails() {
@@ -395,6 +490,7 @@
     }
 
     function openTaskPreview(taskId) {
+        currentPreviewTaskId = taskId;
         const t = currentProjectTasks.find(x => x.id === taskId);
         if (!t) return;
 
@@ -500,6 +596,88 @@
             const err = await res.json();
             showInputError('task-error-msg', 'task-error-text', err.error || 'Unknown error');
         }
+    }
+
+
+    // --- NEW: Edit & Delete Logic ---
+
+    async function openEditTaskModal(taskId) {
+        const task = currentProjectTasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        if (teamMembers.length === 0) await loadTeamMembers();
+
+        document.getElementById('edit-task-id').value = task.id;
+        document.getElementById('edit-task-title').value = task.title;
+        document.getElementById('edit-task-desc').value = task.description || '';
+        document.getElementById('edit-task-priority').value = task.priority;
+        document.getElementById('edit-task-status').value = task.status;
+
+        // Populate Assignee for Edit
+        const sel = document.getElementById('edit-task-assignee');
+        sel.innerHTML = '<option value="">Unassigned</option>';
+        teamMembers.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.innerText = u.full_name || u.email;
+            if (u.id === task.assigned_to) opt.selected = true;
+            sel.appendChild(opt);
+        });
+
+        // Deadline
+        const fp = document.getElementById('edit-task-deadline')._flatpickr;
+        if (fp) fp.setDate(task.deadline || null);
+
+        document.getElementById('edit-task-modal').classList.remove('hidden');
+    }
+
+    async function updateTask() {
+        const id = document.getElementById('edit-task-id').value;
+        const title = document.getElementById('edit-task-title').value.trim();
+        const desc = document.getElementById('edit-task-desc').value.trim();
+        const priority = document.getElementById('edit-task-priority').value;
+        const status = document.getElementById('edit-task-status').value;
+        const assigned_to = document.getElementById('edit-task-assignee').value;
+        const deadlineVal = document.getElementById('edit-task-deadline').value;
+
+        if (!title) { alert("Title is required"); return; }
+
+        let deadlineISO = null;
+        if (deadlineVal) deadlineISO = new Date(deadlineVal).toISOString();
+
+        try {
+            const res = await fetch(`/api/tasks/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, description: desc, priority, status, assigned_to, deadline: deadlineISO })
+            });
+
+            if (res.ok) {
+                document.getElementById('edit-task-modal').classList.add('hidden');
+                showToast('Action successful', 'success');
+                loadTasks();
+            } else {
+                alert("Failed to update");
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    function deleteTask(taskId) {
+        deleteTargetId = taskId;
+        document.getElementById('delete-confirm-modal').classList.remove('hidden');
+    }
+
+    async function confirmDeleteTask() {
+        if (!deleteTargetId) return;
+        try {
+            const res = await fetch(`/api/tasks/${deleteTargetId}`, { method: 'DELETE' });
+            if (res.ok) {
+                document.getElementById('delete-confirm-modal').classList.add('hidden');
+                loadTasks();
+            } else {
+                alert("Failed to delete");
+            }
+        } catch (e) { console.error(e); }
     }
 
     function showInputError(containerId, textId, msg) {
