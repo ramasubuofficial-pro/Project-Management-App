@@ -1,96 +1,251 @@
 {% extends "base.html" %}
 
-{% block title %}Calendar - Antigravity PM{% endblock %}
+{% block title %}Calendar - DIGIANCHORZ PM{% endblock %}
 {% block header_title %}Schedule{% endblock %}
 
 {% block head %}
 <!-- FullCalendar CSS -->
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
 <style>
-    /* FullCalendar Dark Mode / Custom Styling Override */
+    /* 
+       Creative Light Glass Theme
+       Soft, ethereal, and vibrant.
+    */
     :root {
-        --fc-border-color: #e2e8f0;
-        --fc-button-bg-color: #ffffff;
-        --fc-button-border-color: #e2e8f0;
-        --fc-button-text-color: #475569;
-        --fc-button-hover-bg-color: #f8fafc;
-        --fc-button-hover-border-color: #cbd5e1;
-        --fc-button-active-bg-color: #e2e8f0;
-        --fc-button-active-border-color: #cbd5e1;
-        --fc-event-bg-color: #3b82f6;
-        --fc-event-border-color: #3b82f6;
-        --fc-today-bg-color: #f0f9ff;
+        --fc-border-color: rgba(226, 232, 240, 0.6);
+        /* slate-200 */
+        --fc-page-bg-color: transparent;
+        --fc-neutral-bg-color: rgba(255, 255, 255, 0.5);
+        --fc-list-event-hover-bg-color: rgba(241, 245, 249, 0.8);
+        --fc-today-bg-color: rgba(238, 242, 255, 0.5) !important;
+        /* indigo-50 */
     }
 
-    .dark {
-        --fc-border-color: #1e293b;
-        --fc-button-bg-color: #1e293b;
-        --fc-button-border-color: #334155;
-        --fc-button-text-color: #94a3b8;
-        --fc-button-hover-bg-color: #334155;
-        --fc-button-hover-border-color: #475569;
-        --fc-button-active-bg-color: #334155;
-        --fc-button-active-border-color: #475569;
-        --fc-page-bg-color: #0f172a;
-        --fc-neutral-bg-color: #1e293b;
-        --fc-list-event-hover-bg-color: #1e293b;
-        --fc-today-bg-color: #1e293b;
+    /* Main Container */
+    .creative-calendar-wrapper {
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        border-radius: 32px;
+        box-shadow:
+            0 20px 40px -12px rgba(99, 102, 241, 0.1),
+            /* Indigo shadow hint */
+            0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+        padding: 2.5rem;
+        color: #1e293b;
+        /* slate-800 */
+        position: relative;
+        overflow: hidden;
     }
 
+    /* Decorative Background Blobs */
+    .creative-calendar-wrapper::before {
+        content: '';
+        position: absolute;
+        top: -10%;
+        left: -10%;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(167, 139, 250, 0.15) 0%, transparent 70%);
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    .creative-calendar-wrapper::after {
+        content: '';
+        position: absolute;
+        bottom: -5%;
+        right: -5%;
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    /* Header Title */
     .fc .fc-toolbar-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: inherit;
-    }
-
-    /* Remove default underline */
-    .fc-col-header-cell-cushion,
-    .fc-daygrid-day-number {
-        text-decoration: none !important;
-        color: inherit;
-    }
-
-    /* Toolbar Buttons */
-    .fc .fc-button {
-        box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-        border-radius: 0.5rem;
-        font-size: 0.875rem;
-        line-height: 1.25rem;
-        font-weight: 500;
-        transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, color 0.15s ease-in-out;
-        padding: 0.5rem 1rem;
-    }
-
-    .fc .fc-button:focus {
-        outline: 2px solid transparent;
-        outline-offset: 2px;
-        box-shadow: 0 0 0 2px #3b82f6;
-        /* blue-500 */
+        font-family: 'Outfit', sans-serif;
+        font-size: 2.5rem !important;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        background: linear-gradient(135deg, #4f46e5, #ec4899);
+        /* Indigo to Pink */
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        position: relative;
         z-index: 10;
-        /* Ensure ring is visible */
+        margin-bottom: 0.5rem;
     }
 
-    /* Event Styling */
+    /* Toolbar Layout */
+    .fc .fc-toolbar {
+        display: flex;
+        align-items: center;
+        margin-bottom: 2.5rem !important;
+        position: relative;
+        z-index: 10;
+    }
+
+    /* Buttons (Modern Pills) */
+    .fc .fc-button-primary {
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        color: #64748b;
+        /* slate-500 */
+        font-weight: 700;
+        text-transform: capitalize;
+        border-radius: 999px;
+        /* full rounded */
+        padding: 0.6rem 1.4rem;
+        font-size: 0.9rem;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        /* Bouncy spring */
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+    }
+
+    .fc .fc-button-group>.fc-button {
+        border-radius: 999px;
+        margin: 0 4px;
+        flex: none;
+    }
+
+    /* Remove group merging style */
+    .fc .fc-button-group {
+        display: flex;
+        gap: 0;
+    }
+
+    .fc .fc-button-group>.fc-button:not(:first-child),
+    .fc .fc-button-group>.fc-button:not(:last-child) {
+        border-radius: 999px;
+        /* Keep them separate pills */
+    }
+
+    .fc .fc-button-primary:hover {
+        background: #fff;
+        color: #4f46e5;
+        border-color: #c7d2fe;
+        transform: translateY(-2px) scale(1.05);
+        box-shadow: 0 8px 16px -4px rgba(99, 102, 241, 0.2);
+        z-index: 5;
+    }
+
+    .fc .fc-button-primary:not(:disabled).fc-button-active,
+    .fc .fc-button-primary:not(:disabled):active {
+        background: #4f46e5;
+        /* Indigo-600 */
+        border-color: #4f46e5;
+        color: white;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+        transform: translateY(0);
+    }
+
+    .fc .fc-button-primary:focus {
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+    }
+
+    /* Grid Styling */
+    .fc-theme-standard td,
+    .fc-theme-standard th {
+        border-color: rgba(226, 232, 240, 0.8) !important;
+    }
+
+    .fc-scrollgrid {
+        border: none !important;
+    }
+
+    .fc-col-header-cell {
+        background: transparent;
+        padding-bottom: 20px;
+        border: none !important;
+    }
+
+    .fc-col-header-cell-cushion {
+        color: #94a3b8;
+        /* slate-400 */
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        font-weight: 800;
+        text-decoration: none !important;
+    }
+
+    /* Day Cells */
+    .fc-daygrid-day-top {
+        justify-content: center;
+        padding-top: 12px;
+    }
+
+    .fc-daygrid-day-number {
+        color: #64748b;
+        font-size: 0.95rem;
+        font-weight: 600;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s;
+        text-decoration: none !important;
+    }
+
+    .fc-daygrid-day:hover .fc-daygrid-day-number {
+        background: #f1f5f9;
+        color: #334155;
+    }
+
+    /* Today */
+    .fc-day-today {
+        background: transparent !important;
+    }
+
+    .fc-day-today .fc-daygrid-day-number {
+        background: #4f46e5;
+        color: white !important;
+        box-shadow: 0 4px 10px rgba(79, 70, 229, 0.4);
+    }
+
+    /* Event Styling - Bubbles */
     .fc-event {
-        border-radius: 4px;
-        padding: 2px 4px;
-        font-size: 0.85em;
-        cursor: pointer;
         border: none;
-        transition: transform 0.1s;
+        border-radius: 12px;
+        margin: 3px 6px;
+        padding: 4px 10px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.2s ease;
     }
 
     .fc-event:hover {
-        transform: scale(1.02);
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        z-index: 10;
+    }
+
+    /* Default Event Gradient */
+    .fc-h-event {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        /* Indigo to Violet */
+        color: white;
+    }
+
+    .fc-daygrid-event-dot {
+        border-color: white;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="h-full flex flex-col">
-    <div class="glass rounded-2xl shadow-sm border border-slate-100 p-6 flex-1 flex flex-col min-h-[600px]">
+<div class="h-full flex flex-col p-4">
+    <!-- Creative Wrapper -->
+    <div class="creative-calendar-wrapper flex-1 flex flex-col min-h-[700px] relative z-0">
         <!-- Calendar Container -->
-        <div id='calendar' class="flex-1"></div>
+        <div id='calendar' class="flex-1 relative z-10"></div>
     </div>
 </div>
 
@@ -100,32 +255,56 @@
 
         var calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: 'dayGridMonth',
+            themeSystem: 'standard',
             headerToolbar: {
                 left: 'prev,next today',
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,timeGridDay'
             },
             height: '100%',
-            editable: false, // Set to true if we implement drag-n-drop update
-            dayMaxEvents: true, // allow "more" link when too many events
-            events: '/api/calendar/events', // Flask API endpoint
+            contentHeight: 'auto',
+            editable: false,
+            droppable: false,
+            dayMaxEvents: true,
+            events: '/api/calendar/events',
+            navLinks: true,
 
             eventClick: function (info) {
-                // Navigate to task details or open modal
-                // For now, redirect to project tasks or task detail
-                // Since we don't have a direct task detail page, let's alert or log
-                // info.event.extendedProps.project_id could be useful
                 if (info.event.url) {
                     window.location.href = info.event.url;
-                    info.jsEvent.preventDefault(); // prevent browser default
+                    info.jsEvent.preventDefault();
                 }
             },
 
             eventDidMount: function (info) {
-                // Add tooltip or custom styling if needed
                 if (info.event.extendedProps.description) {
                     info.el.title = info.event.extendedProps.description;
                 }
+
+                // Custom Gradients based on priorities
+                let grad = '';
+                const p = info.event.extendedProps.priority;
+                if (p === 'High') {
+                    grad = 'linear-gradient(135deg, #ef4444, #f43f5e)'; /* Red to Rose */
+                } else if (p === 'Medium') {
+                    grad = 'linear-gradient(135deg, #f97316, #fbbf24)'; /* Orange to Amber */
+                } else {
+                    grad = 'linear-gradient(135deg, #3b82f6, #06b6d4)'; /* Blue to Cyan (Low/Default) */
+                }
+
+                info.el.style.background = grad;
+
+                // Add glassshine effect
+                const shine = document.createElement('div');
+                shine.style.position = 'absolute';
+                shine.style.top = '0';
+                shine.style.left = '0';
+                shine.style.width = '100%';
+                shine.style.height = '50%';
+                shine.style.background = 'linear-gradient(to bottom, rgba(255,255,255,0.4), transparent)';
+                shine.style.borderRadius = '12px 12px 64px 64px / 12px 12px 32px 32px';
+                shine.style.pointerEvents = 'none';
+                info.el.appendChild(shine);
             }
         });
 

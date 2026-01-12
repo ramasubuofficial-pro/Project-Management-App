@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, session, Response
-from utils import supabase
+from utils import supabase, get_supabase_admin
 import uuid
 import csv
 import io
@@ -74,11 +74,30 @@ def delete_team_member(user_id):
         supabase.table("notifications").delete().eq("user_id", user_id).execute()
         
         # 3. Handle projects owned by user (Set to NULL or Transfer to Admin)
-        # Assuming owner_id is nullable or we reassign to deleter
         # supabase.table("projects").update({"owner_id": current_user_id}).eq("owner_id", user_id).execute()
 
+        # 4. Delete from Supabase Auth (Crucial to prevent login/re-creation)
+        admin_client = get_supabase_admin()
+        auth_deleted = False
+        if admin_client:
+            try:
+                # This requires SERVICE_ROLE_KEY
+                admin_client.auth.admin.delete_user(user_id)
+                auth_deleted = True
+            except Exception as auth_e:
+                 print(f"Auth Delete Warning: {auth_e}")
+        
+        # 5. Delete from public.users
         res = supabase.table('users').delete().eq('id', user_id).execute()
-        return jsonify({"message": "User deleted", "data": res.data})
+        
+        msg = "User deleted successfully"
+        if not auth_deleted:
+            if not admin_client:
+                msg += " from Team. NOTE: Auth login remains active (Service Key missing). User implies they can login again."
+            else:
+                msg += " from Team, but Auth deletion failed."
+
+        return jsonify({"message": msg, "data": res.data})
     except Exception as e:
         print(f"Delete Error: {e}")
         return jsonify({"error": str(e)}), 400
@@ -125,9 +144,29 @@ def get_projects():
 @api_bp.route('/projects/<project_id>', methods=['GET'])
 def get_project(project_id):
     try:
-        # Note: Ideally check permissions here too for strict security
+        # Fetch Project Basic info
         res = supabase.table("projects").select("*").eq("id", project_id).single().execute()
-        return jsonify(res.data)
+        project = res.data
+        
+        # Fetch Project Members
+        try:
+            # Join project_members with users table via user_id
+            m_res = supabase.table("project_members").select("role, user:user_id(id, full_name, avatar_url, email)").eq("project_id", project_id).execute()
+            
+            # Flatten/Format members list
+            members = []
+            for item in m_res.data:
+                if item.get('user'):
+                    u = item['user']
+                    u['role'] = item.get('role', 'Member')
+                    members.append(u)
+            
+            project['members'] = members
+        except Exception as e:
+            print(f"Error fetching members: {e}")
+            project['members'] = []
+
+        return jsonify(project)
     except Exception as e:
         return jsonify({"error": "Project not found"}), 404
 
@@ -174,44 +213,47 @@ def create_project():
         creator_name = user_data.get('user_metadata', {}).get('full_name', user_data.get('email', 'Someone'))
         
         # Notify Broadcast
-        broadcast_notification(
-            title="New Project",
-            message=f"{creator_name} created a project [{project['title']}].",
-            link=f"/projects/{project['id']}"
-        )
+        # Notify Project Members Only
+        if members:
+            broadcast_notification(
+                title="New Project",
+                message=f"{creator_name} created a project [{project['title']}] and added you.",
+                link=f"/projects/{project['id']}",
+                recipient_ids=members
+            )
         
         return jsonify(project), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-# Helper: Broadcast Notification
-def broadcast_notification(title, message, user_id=None, link=None):
+# Helper: Targeted Notification
+def broadcast_notification(title, message, user_id=None, link=None, recipient_ids=None):
     """
     Sends a notification.
-    If user_id is provided, sends to that specific user.
-    If user_id is None, broadcasts to ALL users.
+    - user_id: Single recipient (legacy support)
+    - recipient_ids: List of user IDs to receive the notification
+    - If neither is provided, NO notification is sent (Safety default to avoid spam)
     """
     try:
         notifications = []
+        target_ids = set()
         
         if user_id:
-            # Single User
+            target_ids.add(user_id)
+            
+        if recipient_ids:
+            target_ids.update(recipient_ids)
+            
+        # Default: Project members only if possible, but here we must be explicit.
+        # If empty targets and not explicit broadcast request, do nothing.
+        
+        for uid in target_ids:
             notifications.append({
-                "user_id": user_id,
+                "user_id": uid,
                 "title": title,
                 "message": message,
                 "link": link
             })
-        else:
-            # Broadcast to All Users
-            users_res = supabase.table("users").select("id").execute()
-            for u in users_res.data:
-                notifications.append({
-                    "user_id": u['id'],
-                    "title": title,
-                    "message": message,
-                    "link": link
-                })
         
         if notifications:
             supabase.table("notifications").insert(notifications).execute()
@@ -305,12 +347,28 @@ def create_task():
             except:
                 pass
 
-        # Notify Broadcast
-        broadcast_notification(
-            title="New Task Created", 
-            message=f"{creator_name} created a task [{task['title']}] and assigned to {assignee_name}.",
-            link=f"/projects/{task['project_id']}" if task.get('project_id') else None
-        )
+        # Helper to get project members
+        project_members = []
+        if task.get('project_id'):
+            try:
+                # Notify Project Members + Assignee
+                pm_res = supabase.table('project_members').select('user_id').eq('project_id', task['project_id']).execute()
+                project_members = [m['user_id'] for m in pm_res.data]
+            except:
+                pass
+
+        # Add Assignee if not in list (though likely is)
+        if task.get('assigned_to') and task.get('assigned_to') not in project_members:
+             project_members.append(task.get('assigned_to'))
+
+        # Notify
+        if project_members:
+            broadcast_notification(
+                title="New Task Created", 
+                message=f"{creator_name} created a task [{task['title']}] and assigned to {assignee_name}.",
+                link=f"/projects/{task['project_id']}" if task.get('project_id') else None,
+                recipient_ids=project_members
+            )
         
         return jsonify(task), 201
     except Exception as e:
@@ -333,10 +391,19 @@ def update_task(task_id):
             user_data = session.get('user', {})
             actor_name = user_data.get('user_metadata', {}).get('full_name', user_data.get('email', 'Someone'))
             
+            # Notify Assignee and Creator
+            recipients = set()
+            if task.get('assigned_to'): recipients.add(task['assigned_to'])
+            if task.get('created_by'): recipients.add(task['created_by'])
+            
+            # Also notify Project Owner?
+            # Fetch project owner if needed, but for now strict to task participants
+            
             broadcast_notification(
                 title=f"Task {new_status}", 
                 message=f"{actor_name} moved task [{task['title']}] to {new_status}.",
-                link=f"/projects/{task['project_id']}" if task.get('project_id') else None
+                link=f"/projects/{task['project_id']}" if task.get('project_id') else None,
+                recipient_ids=list(recipients)
             )
 
         return jsonify(task)
@@ -351,15 +418,56 @@ def get_notifications():
     if not user_id:
         return jsonify([]), 401
     try:
-        res = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
-        return jsonify(res.data)
+        # Get latest 20 notifications
+        res = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+        notifs = res.data
+        
+        # Calculate unread count (Simplified for stability)
+        # unread_res = supabase.table("notifications").select("id", count='exact').eq("user_id", user_id).eq("is_read", False).execute()
+        # unread_count = unread_res.count if unread_res.count is not None else 0
+        
+        # Fallback count: Just count unread in the fetched 20 for now
+        unread_count = sum(1 for n in notifs if not n.get('is_read'))
+        
+        return jsonify({
+            "notifications": notifs,
+            "unread_count": unread_count
+        })
+    except Exception as e:
+        print(f"Notification Error: {e}")
+        # Return empty structure so UI doesn't break
+        return jsonify({
+            "notifications": [],
+            "unread_count": 0
+        })
+
+@api_bp.route("/notifications/<notif_id>/read", methods=["POST"])
+def mark_notification_read(notif_id):
+    user_id = get_current_user_id()
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    try:
+        supabase.table("notifications").update({"is_read": True}).eq("id", notif_id).eq("user_id", user_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@api_bp.route("/notifications/read-all", methods=["POST"])
+def mark_all_read():
+    user_id = get_current_user_id()
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    try:
+        supabase.table("notifications").update({"is_read": True}).eq("user_id", user_id).execute()
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 # ---------------- STATS ----------------
 @api_bp.route("/stats", methods=["GET"])
 def get_stats():
-    user_id = get_current_user_id()
+    user = session.get('user', {})
+    user_id = user.get('id')
+    role = user.get('role', 'Team Member')
+
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
     
@@ -367,7 +475,14 @@ def get_stats():
         p_res = supabase.table("projects").select("id, title").execute()
         projects_map = {p["id"]: p["title"] for p in p_res.data}
         
-        tasks_res = supabase.table("tasks").select("id, project_id, status, created_at").execute()
+        # Filter stats based on role
+        query = supabase.table("tasks").select("id, project_id, status, created_at")
+        
+        if role != 'Admin':
+            # Non-Admins: Only see THEIR assigned tasks in stats
+            query = query.eq('assigned_to', user_id)
+            
+        tasks_res = query.execute()
         tasks = tasks_res.data
         
         # 1. Counts
@@ -561,13 +676,33 @@ def punch_attendance():
         
         if not existing.data:
             # PUNCH IN
-            res = supabase.table("attendance").insert({
+            data_in = request.json or {}
+            location = data_in.get("location")
+            
+            payload = {
                 "user_id": user_id,
                 "date": today,
                 "punch_in": now.isoformat(),
                 "status": "Present"
-            }).execute()
-            return jsonify({"message": "Punched In", "data": res.data[0], "type": "in"})
+            }
+            # Try inserting with location
+            if location:
+                payload["location"] = location
+
+            try:
+                res = supabase.table("attendance").insert(payload).execute()
+                return jsonify({"message": "Punched In", "data": res.data[0], "type": "in"})
+            except Exception as e:
+                # Check for "column not found" error
+                err_str = str(e)
+                if "PGRST204" in err_str or "Could not find the 'location' column" in err_str:
+                    print("Location column missing. Retrying without location.")
+                    if "location" in payload:
+                        del payload["location"]
+                    res = supabase.table("attendance").insert(payload).execute()
+                    return jsonify({"message": "Punched In (Location not saved: DB schema pending)", "data": res.data[0], "type": "in", "warning": "missing_col"})
+                else:
+                    raise e
         
         else:
             record = existing.data[0]
@@ -575,12 +710,28 @@ def punch_attendance():
                 return jsonify({"error": "Already punched out for today."}), 400
             
             # PUNCH OUT
-            res = supabase.table("attendance").update({
+            data_out = request.json or {}
+            loc_out = data_out.get("location")
+
+            update_payload = {
                 "punch_out": now.isoformat(),
                 "status": "Present"
-            }).eq("id", record["id"]).execute()
-            
-            return jsonify({"message": "Punched Out", "data": res.data[0], "type": "out"})
+            }
+            if loc_out:
+                update_payload["punch_out_location"] = loc_out
+
+            try:
+                res = supabase.table("attendance").update(update_payload).eq("id", record["id"]).execute()
+                return jsonify({"message": "Punched Out", "data": res.data[0], "type": "out"})
+            except Exception as e:
+                # Fallback if punch_out_location column is missing
+                if "punch_out_location" in update_payload:
+                    print("punch_out_location column missing, retrying...")
+                    del update_payload["punch_out_location"]
+                    res = supabase.table("attendance").update(update_payload).eq("id", record["id"]).execute()
+                    return jsonify({"message": "Punched Out (Location not saved)", "data": res.data[0], "type": "out", "warning": "missing_col"})
+                else:
+                    raise e
             
     except Exception as e:
         print(f"Attendance Error: {e}")
@@ -607,6 +758,65 @@ def get_attendance_history():
             query = query.limit(30)
             
         res = query.execute()
+        return jsonify(res.data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# ---------------- ADMIN ROUTES ----------------
+@api_bp.route("/admin/attendance-history", methods=["GET"])
+def get_admin_attendance_history():
+    # Role Check
+    user = session.get('user', {})
+    if user.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized"}), 403
+
+    target_user_id = request.args.get('user_id')
+
+    try:
+        # Build Query
+        query = supabase.table("attendance").select("*").order("date", desc=True)
+        
+        if target_user_id:
+            query = query.eq("user_id", target_user_id)
+            
+        res = query.limit(100).execute()
+        attendance_data = res.data
+        
+        if not attendance_data:
+            return jsonify([])
+
+        # Get unique user IDs involved
+        user_ids = list(set([r['user_id'] for r in attendance_data]))
+        
+        # Fetch Users details
+        if user_ids:
+            users_res = supabase.table("users").select("id, full_name, email").in_("id", user_ids).execute()
+            users_map = {u['id']: u for u in users_res.data}
+            
+            # Merge
+            final_data = []
+            for record in attendance_data:
+                u = users_map.get(record['user_id'], {})
+                record['user_name'] = u.get('full_name') or u.get('email') or 'Unknown'
+                final_data.append(record)
+            
+            return jsonify(final_data)
+        
+        return jsonify(attendance_data)
+
+    except Exception as e:
+        print(f"Admin History Error: {e}")
+        return jsonify({"error": str(e)}), 400
+
+@api_bp.route("/admin/users", methods=["GET"])
+def get_all_users_admin():
+    # Role Check
+    user = session.get('user', {})
+    if user.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        res = supabase.table("users").select("id, full_name, email").execute()
         return jsonify(res.data)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -664,39 +874,75 @@ def invite_member():
     if not email:
         return jsonify({"error": "Email is required"}), 400
 
+    admin_client = get_supabase_admin()
+    if not admin_client:
+        return jsonify({"error": "Server configuration error: Missing Service Key"}), 500
+
     # 1. Generate Temp Password
     import secrets
     import string
     alphabet = string.ascii_letters + string.digits
-    temp_password = ''.join(secrets.choice(alphabet) for i in range(10))
+    temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+
+    invited_user_id = None
 
     try:
-        # 2. Register User in Supabase (Client-side sign up)
-        # Note: If email confirmation is ON, user might still need to confirm via Supabase email.
-        # But we will give them credentials anyway.
-        auth_res = supabase.auth.sign_up({
+        # 2. Admin Create User
+        # We use admin.create_user to force creation and get ID
+        auth_res = admin_client.auth.admin.create_user({
             "email": email,
             "password": temp_password,
-            "options": {
-                "data": {"full_name": "Invited Member", "role": role}
-            }
+            "email_confirm": True, 
+            "user_metadata": {"full_name": "Invited Member", "role": role}
         })
+        invited_user_id = auth_res.user.id
         
-        # Check if user actually created (or if auto-confirm is on)
-        if not auth_res.user:
-            # Might be rate limited or existing user
-            pass 
-
     except Exception as e:
-        # If user already exists, we might just want to Invite them (send email) 
-        # but we can't see their password. 
-        # For this simplified flow, we'll assume new user or ignore error if they exist.
-        print(f"Auth Signup Error (User might exist): {e}")
+        print(f"Auth Create Error (Likely Exists): {e}")
+        # RECOVERY FLOW: User exists in Auth, but we want to reset them.
+        try:
+            # 2a. Find User ID
+            # HACK: List users to find ID. API doesn't list by email easily.
+            # We assume the list isn't huge.
+            all_users = admin_client.auth.admin.list_users(per_page=1000)
+            # Check if all_users is a list or object with .users
+            users_list = all_users if isinstance(all_users, list) else getattr(all_users, 'users', [])
+            
+            target_user = next((u for u in users_list if u.email == email), None)
+            
+            if target_user:
+                invited_user_id = target_user.id
+                print(f"Found existing Auth User: {invited_user_id}. Updating credentials.")
+                
+                # 2b. Update Password & Metadata
+                admin_client.auth.admin.update_user_by_id(invited_user_id, {
+                    "password": temp_password,
+                    "user_metadata": {"full_name": "Invited Member", "role": role},
+                    "email_confirm": True
+                })
+            else:
+                 return jsonify({"error": "User email exists in Auth logic but not found in list. Please contact admin."}), 400
 
-    # 3. Create/Update Profile in public table (if not handled by Trigger)
-    # Ideally triggers handle this, but let's ensure they are in 'users' table
-    # We don't have their ID easily if sign_up doesn't return it cleanly on duplicate.
-    # We will skip manual insertion and rely on the sign_up or existing user.
+        except Exception as recovery_e:
+            print(f"Auth Recovery Failed: {recovery_e}")
+            return jsonify({"error": f"Failed to reset existing user: {str(recovery_e)}"}), 500
+
+    if not invited_user_id:
+        return jsonify({"error": "Failed to resolve User ID"}), 500
+
+    # 3. CRITICAL: Insert into public.users to ALLOW login
+    try:
+        supabase.table("users").upsert({
+            "id": invited_user_id,
+            "email": email,
+            "full_name": "Invited Member",
+            "role": role
+            # avatar_url is optional
+        }).execute()
+    except Exception as db_e:
+        print(f"DB Upsert Error: {db_e}")
+        # If DB fails, maybe delete Auth to keep clean?
+        return jsonify({"error": f"Database Error: {db_e}"}), 500
 
     # 4. Send Email via SMTP
     import smtplib
@@ -709,31 +955,40 @@ def invite_member():
     sender_password = Config.SMTP_PASSWORD
 
     if not sender_email or not sender_password:
-         return jsonify({"error": "SMTP Configuration Missing"}), 500
+         return jsonify({"message": f"User created/restored! Password: {temp_password} (SMTP not configured)"}), 200
 
     try:
-        # Create message
         msg = MIMEMultipart()
-        msg["From"] = sender_email
-        msg["To"] = email
-        msg["Subject"] = "You're invited to join Antigravity PM"
+        msg['From'] = f"DIGIANCHORZ <{sender_email}>"
+        msg['To'] = email
+        msg['Subject'] = "You've been invited to Digianchorz PM"
 
         body = f"""
         <html>
-        <body style="font-family: Arial, sans-serif; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #4f46e5;">Antigravity PM</h2>
-                <p>Hello,</p>
-                <p>You have been invited to join the <strong>Antigravity</strong> workspace as a <strong>{role}</strong>.</p>
-                <p>We have created an account for you.</p>
-                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0; font-weight: bold;">Login Credentials:</p>
-                    <p style="margin: 5px 0;">Email: {email}</p>
-                    <p style="margin: 5px 0;">Password: <strong>{temp_password}</strong></p>
+        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 0;">
+            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+                
+                <h2 style="color: #4f46e5; text-align: center; margin-bottom: 24px; font-weight: 800; font-size: 24px;">Welcome to Digianchorz</h2>
+                
+                <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                    Hello,
+                    <br><br>
+                    You have been invited to join the <strong>Digianchorz Project Management</strong> workspace as a <strong>{role}</strong>. We've set up an account for you to get started immediately.
+                </p>
+
+                <div style="background-color: #f1f5f9; padding: 24px; border-radius: 12px; margin-bottom: 32px; border: 1px solid #e2e8f0;">
+                    <p style="margin: 0; font-weight: 700; color: #475569; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; margin-bottom: 12px;">Your Login Credentials</p>
+                    <p style="margin: 0 0 8px 0; font-size: 16px;"><strong>Email:</strong> {email}</p>
+                    <p style="margin: 0; font-size: 16px;"><strong>Password:</strong> <span style="font-family: monospace; background-color: #e2e8f0; padding: 4px 8px; rounded: 4px; color: #0f172a;">{temp_password}</span></p>
                 </div>
-                <p>Click the button below to sign in:</p>
-                <a href="{request.host_url}auth/login" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Login Now</a>
-                <p style="margin-top: 20px; font-size: 12px; color: #888;">Please change your password after logging in.</p>
+
+                <div style="text-align: center; margin-bottom: 32px;">
+                    <a href="{request.host_url}login" style="background-color: #4f46e5; color: white; padding: 14px 32px; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">Login to Dashboard</a>
+                </div>
+
+                <p style="text-align: center; font-size: 14px; color: #64748b;">
+                    Please change your password after logging in for security.
+                </p>
             </div>
         </body>
         </html>

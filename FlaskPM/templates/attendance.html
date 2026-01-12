@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Antigravity - Attendance{% endblock %}
+{% block title %}DIGIANCHORZ - Attendance{% endblock %}
 
 {% block content %}
 <div class="space-y-8">
@@ -78,7 +78,11 @@
                         <tr>
                             <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">Date</th>
                             <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">Punch In</th>
+                            <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">In Location
+                            </th>
                             <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">Punch Out
+                            </th>
+                            <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">Out Location
                             </th>
                             <th class="p-3 text-sm font-semibold text-slate-500 border-b border-slate-200">Status</th>
                         </tr>
@@ -91,6 +95,33 @@
         </div>
 
     </div>
+    <!-- LOCATION CONFIRM MODAL -->
+    <div id="loc-modal"
+        class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-96 max-w-full m-4">
+            <h3 class="text-xl font-bold text-slate-800 mb-2">Confirm Location</h3>
+            <p class="text-sm text-slate-500 mb-4">
+                We detected the following location. If it's incorrect (e.g. wrong city due to Wi-Fi), please edit it
+                below.
+            </p>
+
+            <textarea id="loc-input" rows="3"
+                class="w-full text-sm p-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4 bg-slate-50 text-slate-700"></textarea>
+
+            <div class="flex space-x-3">
+                <button onclick="closeLocModal()"
+                    class="flex-1 py-2 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition">
+                    Cancel
+                </button>
+                <button onclick="confirmPunch()"
+                    class="flex-1 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">
+                    Confirm & Punch
+                </button>
+            </div>
+            <div id="loc-debug" class="mt-2 text-xs text-slate-400 text-center"></div>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -123,6 +154,7 @@
     })();
 
     let currentStatus = 'none'; // none, punched_in, completed
+    let pendingLocation = ''; // Store detected location
 
     function safeParseTime(isoStr) {
         if (!isoStr) return '-';
@@ -188,28 +220,167 @@
         }
     }
 
+    // Helper: Promisified Geolocation with Fallback
+    function getPositionSafe() {
+        return new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                reject(new Error("Geolocation not supported"));
+                return;
+            }
+
+            // 1. Try High Accuracy (GPS) - Timeout 20s
+            navigator.geolocation.getCurrentPosition(
+                (pos) => resolve(pos),
+                (err) => {
+                    console.warn("High Accuracy Geo failed. Retrying Low Accuracy...", err);
+                    // 2. Fallback: Low Accuracy (WiFi/IP) - Timeout 20s
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve(pos),
+                        (errFinal) => reject(errFinal),
+                        { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }
+                    );
+                },
+                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+            );
+        });
+    }
+
+    // CONFIGURATION: Enter your Google Maps API Key here for better accuracy
+    // If empty, it falls back to free OpenStreetMap (less accurate for Indian villages)
+    const GOOGLE_API_KEY = '';
+
+    // Step 1: Detect Location & Open Modal
     async function handlePunch() {
         const btn = document.getElementById('punch-btn');
-        if (btn.disabled) return;
+        const txt = document.getElementById('punch-text');
 
-        // Optimistic UI
+        if (btn.disabled) return;
         btn.disabled = true;
+        const originalText = txt.innerText;
+        txt.innerText = "Locating...";
+
+        let finalLat, finalLong, finalSource = 'GPS';
 
         try {
-            const res = await fetch('/api/attendance/punch', { method: 'POST' });
+            // Get Coords
+            const pos = await getPositionSafe();
+            finalLat = pos.coords.latitude;
+            finalLong = pos.coords.longitude;
+            const acc = pos.coords.accuracy;
+
+            if (acc > 5000) showToast(`Low Accuracy (${Math.round(acc)}m). Use Wi-Fi/GPS.`, "warning");
+            finalSource = `Acc: ${Math.round(acc)}m`;
+
+            let locationStr = `${finalLat.toFixed(5)}, ${finalLong.toFixed(5)}`;
+
+            // Reverse Geocode
+            try {
+                if (GOOGLE_API_KEY) {
+                    const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${finalLat},${finalLong}&key=${GOOGLE_API_KEY}`);
+                    const gData = await gRes.json();
+                    if (gData.status === 'OK' && gData.results && gData.results.length > 0) {
+                        locationStr = gData.results[0].formatted_address;
+                    }
+                } else {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${finalLat}&lon=${finalLong}&zoom=18&addressdetails=1`, {
+                        headers: { 'Accept-Language': 'en-IN,en-GB,en-US;q=0.9,en;q=0.8' },
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (geoRes.ok) {
+                        const geoData = await geoRes.json();
+                        if (geoData.address) {
+                            const addr = geoData.address;
+                            const locality = addr.suburb || addr.neighbourhood || addr.village || addr.quarter || addr.residential || addr.road || '';
+                            let city = addr.city || addr.town || addr.municipality || '';
+                            let district = addr.state_district || addr.county || addr.district || '';
+                            const state = addr.state || '';
+
+                            district = district.replace(/ District$/i, '').trim();
+                            city = city.replace(/ District$/i, '').trim();
+                            if (locality.toLowerCase() === city.toLowerCase()) city = '';
+                            if (city.toLowerCase() === district.toLowerCase()) district = '';
+                            if (locality.toLowerCase() === district.toLowerCase()) district = '';
+
+                            let parts = [locality, city, district, state].filter(p => p && p.trim().length > 0);
+                            locationStr = parts.join(', ');
+                            if (locationStr.length < 3 && geoData.display_name) locationStr = geoData.display_name.split(',').slice(0, 3).join(',');
+                        }
+                    }
+                }
+            } catch (err) { console.warn("Reverse geo error", err); }
+
+            // DEBUG INFO for user
+            document.getElementById('loc-debug').innerText = `Source: ${finalSource} | ${finalLat.toFixed(4)}, ${finalLong.toFixed(4)}`;
+
+            // OPEN MODAL
+            document.getElementById('loc-input').value = locationStr;
+            document.getElementById('loc-modal').classList.remove('hidden');
+
+            // Re-enable button underneath (in case they cancel)
+            btn.disabled = false;
+            txt.innerText = originalText;
+
+        } catch (error) {
+            console.error(error);
+            let msg = "Unable to retrieve location.";
+            if (error.message && error.message.includes("Geolocation not supported")) msg = "Geolocation not supported.";
+            else if (error.code === 1) msg = "Locating Denied: Please allow access.";
+            else if (error.code === 2) msg = "Position Unavailable (Enable GPS/WiFi).";
+            else if (error.code === 3 || (error.message && error.message.includes("timeout"))) msg = "Location Timeout. Retry.";
+            showToast(msg, "error");
+            btn.disabled = false;
+            txt.innerText = originalText;
+        }
+    }
+
+    function closeLocModal() {
+        document.getElementById('loc-modal').classList.add('hidden');
+    }
+
+    // Step 2: Confirm & Send to Server
+    async function confirmPunch() {
+        const finalLoc = document.getElementById('loc-input').value;
+        if (!finalLoc || finalLoc.trim().length < 3) {
+            showToast("Please enter a valid location.", "warning");
+            return;
+        }
+
+        closeLocModal();
+
+        const btn = document.getElementById('punch-btn');
+        const txt = document.getElementById('punch-text');
+
+        btn.disabled = true;
+        const originalText = txt.innerText; // "Punch In" or "Punch Out"
+        txt.innerText = "Punching...";
+
+        try {
+            const res = await fetch('/api/attendance/punch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ location: finalLoc })
+            });
             const result = await res.json();
 
+            if (result.warning === "missing_col") showToast("Punch successful, but Location column missing in DB.", "warning");
+
             if (res.ok) {
-                // Reload state
                 loadToday();
                 loadHistory();
             } else {
-                alert(result.error || "Error punching.");
+                showToast(result.error || "Error punching.", "error");
                 btn.disabled = false;
+                txt.innerText = originalText;
             }
         } catch (e) {
-            alert("Network error");
+            console.error(e);
+            showToast("Network Error during punch.", "error");
             btn.disabled = false;
+            txt.innerText = originalText;
         }
     }
 
@@ -218,7 +389,7 @@
         const month = document.getElementById('hist-month').value;
         const year = document.getElementById('hist-year').value;
 
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Loading records...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">Loading records...</td></tr>';
 
         try {
             const params = new URLSearchParams({ month, year });
@@ -227,7 +398,7 @@
 
             tbody.innerHTML = '';
             if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">No records found.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400">No records found.</td></tr>';
                 return;
             }
 
@@ -240,18 +411,20 @@
                 if (row.status === 'Present') statusColor = 'text-green-600 font-semibold';
 
                 const tr = `
-                 <tr class="hover:bg-slate-50 transition">
-                     <td class="p-3 border-b border-slate-100">${date}</td>
-                     <td class="p-3 border-b border-slate-100 font-mono text-slate-600">${inTime}</td>
-                     <td class="p-3 border-b border-slate-100 font-mono text-slate-600">${outTime}</td>
-                     <td class="p-3 border-b border-slate-100 ${statusColor}">${row.status || '-'}</td>
+                 <tr class="hover:bg-slate-50 transition border-b border-slate-100 last:border-0">
+                     <td class="p-3 text-slate-600 align-top">${date}</td>
+                     <td class="p-3 font-mono text-slate-600 align-top">${inTime}</td>
+                     <td class="p-3 text-xs text-slate-500 max-w-[150px] align-top truncate" title="${row.location || ''}">${row.location || '-'}</td>
+                     <td class="p-3 font-mono text-slate-600 align-top">${outTime}</td>
+                     <td class="p-3 text-xs text-slate-500 max-w-[150px] align-top truncate" title="${row.punch_out_location || ''}">${row.punch_out_location || '-'}</td>
+                     <td class="p-3 ${statusColor} align-top">${row.status || '-'}</td>
                  </tr>
                `;
                 tbody.insertAdjacentHTML('beforeend', tr);
             });
         } catch (e) {
             console.error(e);
-            tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading history</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-400">Error loading history</td></tr>';
         }
     }
 

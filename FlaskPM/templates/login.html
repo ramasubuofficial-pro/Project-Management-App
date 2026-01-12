@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Login - Antigravity PM{% endblock %}
+{% block title %}Login - DIGIANCHORZ PM{% endblock %}
 
 {% block content %}
 <div class="fixed inset-0 flex items-center justify-center bg-slate-50 z-[1001]">
@@ -9,7 +9,7 @@
         <div class="text-center mb-8">
             <h1
                 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-indigo-600 mb-2">
-                Antigravity</h1>
+                DIGIANCHORZ</h1>
             <p class="text-slate-500">Project Management Reimagined</p>
         </div>
 
@@ -77,12 +77,37 @@
                     user: session.user
                 })
             });
+
+            const data = await res.json(); // Always parse JSON
+
             if (res.ok) {
                 window.location.href = "{{ url_for('views.dashboard') }}";
             } else {
-                console.error("Failed to sync session");
+                // If server rejects (e.g. Access Denied), we MUST sign out of Supabase
+                // otherwise resizing reloading page will loop "Logged in -> Rejected -> Logged in"
+                console.error("Session sync failed:", data.error);
+                showToast(data.error || "Login rejected by server.", "error");
+
+                // Force logout client-side to reset state
+                await supabaseClient.auth.signOut();
+
+                // Reset UI if it was button click
+                const btn = document.querySelector('button[onclick="signInWithEmail()"]');
+                if (btn) {
+                    btn.innerText = "Login";
+                    btn.disabled = false;
+                }
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            showToast("Network error during login", "error");
+            // Reset UI
+            const btn = document.querySelector('button[onclick="signInWithEmail()"]');
+            if (btn) {
+                btn.innerText = "Login";
+                btn.disabled = false;
+            }
+        }
     }
 
     async function signInWithEmail() {
@@ -103,7 +128,7 @@
             // onAuthStateChange will handle redirect
 
         } catch (error) {
-            alert(error.message || "Login failed");
+            showToast(error.message || "Login failed", "error");
             btn.innerText = "Login";
             btn.disabled = false;
         }
@@ -120,7 +145,7 @@
             if (error) throw error;
         } catch (error) {
             console.error('Error logging in:', error);
-            alert('Error logging in: ' + (error.message || JSON.stringify(error)));
+            showToast('Error logging in: ' + (error.message || JSON.stringify(error)), "error");
         }
     }
 </script>

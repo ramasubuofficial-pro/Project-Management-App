@@ -1,5 +1,5 @@
-from flask import Blueprint, redirect, url_for, session, request, render_template
-from utils import supabase
+from flask import Blueprint, redirect, url_for, session, request, render_template, jsonify
+from utils import supabase, get_supabase_admin
 import requests
 from config import Config
 
@@ -43,59 +43,58 @@ def set_session():
     user_data = data.get('user')
     
     if access_token and user_data:
-        session['user'] = user_data
-        session['access_token'] = access_token
-        
-        # Check if user exists in our public.users table, if not create them
         user_id = user_data.get('id')
         email = user_data.get('email')
         full_name = user_data.get('user_metadata', {}).get('full_name', '')
         avatar_url = user_data.get('user_metadata', {}).get('avatar_url', '')
 
         try:
-            # Upsert user to ensure they exist in our custom table
-            # We use upsert to handle both new and existing users smoothly
-            user_payload = {
-                'id': user_id,
-                'email': email,
-                'full_name': full_name,
-                'avatar_url': avatar_url,
-                # 'role': 'Team Member' - Don't overwrite role on login if it exists!
-                # Upsert without role update if possible? 
-                # Supabase upsert overwrites all fields provided.
-                # Use a check if you want to preserve role, or just upsert basic info.
-            }
+            # STRICT AUTH CHECK:
+            # User must ALREADY exist in public.users (via Invite) to log in.
             
-            # First check if user exists to preserve role
-            existing = supabase.table('users').select('role').eq('id', user_id).execute()
+            # Use Admin Client to bypass RLS for this check
+            # (Because 'supabase' client is Anon and might not be able to read users table if RLS is strict)
+            admin_client = get_supabase_admin()
+            verifier = admin_client if admin_client else supabase
             
-            db_role = 'Team Member'
+            existing = verifier.table('users').select('role, full_name').eq('id', user_id).execute()
             
             if not existing.data:
-                user_payload['role'] = 'Team Member'
-                supabase.table('users').insert(user_payload).execute()
-            else:
-                db_role = existing.data[0].get('role', 'Team Member')
-                # Update info but keep role
-                supabase.table('users').update({
-                    'email': email,
-                    'full_name': full_name,
-                    'avatar_url': avatar_url
-                }).eq('id', user_id).execute()
+                # User not found in DB -> Was not invited or was deleted.
+                print(f"Login Rejected: User {email} ({user_id}) not found in public.users")
+                # SECURITY: Return error to frontend
+                return jsonify({"error": "Access Denied. You must be invited by an Admin.", "redirect": "/login"}), 403
             
-            # CRITICAL: Update the session user object with the APP role, not just Auth role
-            session_user = session['user']
-            session_user['role'] = db_role 
-            session['user'] = session_user # Re-assign to ensure session saves
-                
-        except Exception as e:
-            print(f"Error syncing user: {e}")
-                
-        except Exception as e:
-            print(f"Error syncing user: {e}")
+            # --- User is Valid ---
+            record = existing.data[0]
+            db_role = record.get('role', 'Member')
+            db_name = record.get('full_name')
 
-        return {"status": "success"}, 200
-    return {"status": "error"}, 400
+            # Update details (Avatar/Name) but keep Role
+            update_payload = {
+                'email': email,
+                'avatar_url': avatar_url
+            }
+            if not db_name and full_name:
+                update_payload['full_name'] = full_name
+            elif db_name:
+                user_data['user_metadata']['full_name'] = db_name # Session uses DB name
+                user_data['full_name'] = db_name
+
+            supabase.table('users').update(update_payload).eq('id', user_id).execute()
+
+            # Set Session
+            user_data['role'] = db_role
+            session['user'] = user_data
+            session['access_token'] = access_token
+            
+            return jsonify({"status": "success"}), 200
+
+        except Exception as e:
+            print(f"Error syncing user: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"error": "Invalid payload"}), 400
 
 @auth_bp.route('/logout')
 def logout():

@@ -65,3 +65,8 @@ def team():
 @login_required
 def attendance():
     return render_template('attendance.html', user=session['user'])
+
+# Convenience Redirect
+@view_bp.route('/login')
+def login_redirect():
+    return redirect(url_for('auth.login'))

@@ -14,6 +14,26 @@
         <div>
             <h1 class="text-3xl font-bold text-slate-900 mb-2" id="project-title-header">Loading...</h1>
             <p class="text-slate-500 max-w-2xl" id="project-desc-header"></p>
+
+            <!-- Project Meta Info -->
+            <div class="flex items-start gap-8 mt-6">
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase mb-1">Timeline</h4>
+                    <div class="flex items-center text-sm font-medium text-slate-700">
+                        <svg class="w-4 h-4 mr-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span id="project-timeline">Loading...</span>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase mb-1">Team</h4>
+                    <div class="flex -space-x-2" id="project-team-list">
+                        <span class="text-xs text-slate-400">Loading...</span>
+                    </div>
+                </div>
+            </div>
         </div>
         <div>
             <button onclick="openCreateTaskModal()"
@@ -73,22 +93,58 @@
         <h3 class="text-xl font-bold mb-4">New Task</h3>
         <div class="space-y-4">
             <input type="text" id="task-title" placeholder="Task Title"
-                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition">
+                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition"
+                oninput="document.getElementById('task-error-msg').classList.add('hidden')">
+            <!-- Inline Error Message -->
+            <div id="task-error-msg" class="hidden text-red-500 text-sm px-2 flex items-center">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span id="task-error-text">Title is required</span>
+            </div>
             <textarea id="task-desc" placeholder="Description" rows="3"
-                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition"></textarea>
+                class="w-full px-4 py-2 border rounded-lg bg-slate-50 focus:bg-white transition"
+                oninput="document.getElementById('desc-error-msg').classList.add('hidden')"></textarea>
+            <div id="desc-error-msg" class="hidden text-red-500 text-sm px-2 flex items-center">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span id="desc-error-text">Description is required</span>
+            </div>
             <div class="flex space-x-4">
-                <select id="task-priority" class="w-1/3 px-4 py-2 border rounded-lg bg-slate-50">
-                    <option value="Low">Low Priority</option>
-                    <option value="Medium" selected>Medium Priority</option>
-                    <option value="High">High Priority</option>
-                </select>
                 <div class="w-1/3">
-                    <select id="task-assignee" class="w-full px-4 py-2 border rounded-lg bg-slate-50">
+                    <select id="task-priority" class="w-full px-4 py-2 border rounded-lg bg-slate-50">
+                        <option value="Low">Low Priority</option>
+                        <option value="Medium" selected>Medium Priority</option>
+                        <option value="High">High Priority</option>
+                    </select>
+                </div>
+                <div class="w-1/3">
+                    <select id="task-assignee" class="w-full px-4 py-2 border rounded-lg bg-slate-50"
+                        oninput="document.getElementById('assignee-error-msg').classList.add('hidden')">
                         <option value="">Unassigned</option>
                         <!-- Populated via JS -->
                     </select>
+                    <div id="assignee-error-msg" class="hidden text-red-500 text-xs mt-1">
+                        Assignee is required
+                    </div>
                 </div>
-                <input type="date" id="task-deadline" class="w-1/3 px-4 py-2 border rounded-lg bg-slate-50">
+                <div class="w-1/3 relative">
+                    <input type="text" id="task-deadline" placeholder="Deadline"
+                        class="w-full pl-10 pr-4 py-2 border rounded-lg bg-slate-50 focus:bg-white cursor-pointer"
+                        oninput="document.getElementById('deadline-error-msg').classList.add('hidden')">
+                    <svg class="absolute left-3 top-2.5 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
+                        </path>
+                    </svg>
+                    <div id="deadline-error-msg" class="hidden text-red-500 text-xs mt-1">
+                        Deadline is required
+                    </div>
+                </div>
             </div>
         </div>
         <div class="mt-6 flex justify-end space-x-3">
@@ -180,6 +236,19 @@
     let currentProjectTasks = []; // Store tasks for preview
 
     async function openCreateTaskModal() {
+        // Reset Fields
+        document.getElementById('task-title').value = '';
+        document.getElementById('task-desc').value = '';
+        document.getElementById('task-priority').value = 'Medium';
+        document.getElementById('task-assignee').value = '';
+        document.getElementById('task-deadline').value = '';
+
+        // Hide Errors
+        ['task-error-msg', 'desc-error-msg', 'assignee-error-msg', 'deadline-error-msg'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+
         document.getElementById('create-task-modal').classList.remove('hidden');
         if (teamMembers.length === 0) {
             await loadTeamMembers();
@@ -207,6 +276,14 @@
     document.addEventListener('DOMContentLoaded', () => {
         loadProjectDetails();
         loadTasks();
+
+        // Initialize Flatpickr
+        flatpickr("#task-deadline", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            minDate: "today",
+            theme: "dark" // Explicitly requested style look-alike
+        });
     });
 
     async function loadProjectDetails() {
@@ -216,6 +293,28 @@
                 const project = await res.json();
                 document.getElementById('project-title-header').innerText = project.title;
                 document.getElementById('project-desc-header').innerText = project.description || 'No description provided.';
+
+                // Display Dates
+                const start = project.start_date ? new Date(project.start_date).toLocaleDateString() : 'TBD';
+                const end = project.end_date ? new Date(project.end_date).toLocaleDateString() : 'TBD';
+                document.getElementById('project-timeline').innerText = `${start} - ${end}`;
+
+                // Display Team
+                const teamBox = document.getElementById('project-team-list');
+                teamBox.innerHTML = '';
+                if (project.members && project.members.length > 0) {
+                    project.members.forEach(m => {
+                        const avatar = m.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.full_name)}`;
+                        const img = document.createElement('img');
+                        img.src = avatar;
+                        img.className = 'w-8 h-8 rounded-full border-2 border-white ring-1 ring-slate-100';
+                        img.title = `${m.full_name} (${m.role})`;
+                        teamBox.appendChild(img);
+                    });
+                } else {
+                    teamBox.innerHTML = '<span class="text-xs text-slate-400 italic mt-1">No members</span>';
+                }
+
             } else {
                 document.getElementById('project-title-header').innerText = 'Project Not Found';
             }
@@ -287,7 +386,9 @@
                 <div class="flex -space-x-2">
                     ${assignee ? `<img src="${avatar}" class="w-6 h-6 rounded-full border-2 border-white" title="Assigned to ${name}">` : '<span class="text-xs text-slate-300 italic">Unassigned</span>'}
                 </div>
-                <span class="text-xs text-slate-400 font-medium">${new Date(t.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                <span class="text-xs text-slate-400 font-medium" title="Created: ${new Date(t.created_at).toLocaleString()}">
+                    ${new Date(t.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
             </div>
         `;
         return el;
@@ -313,7 +414,10 @@
         // Deadline
         const dEl = document.getElementById('preview-deadline');
         if (t.deadline) {
-            dEl.innerText = new Date(t.deadline).toLocaleDateString();
+            dEl.innerText = new Date(t.deadline).toLocaleString(undefined, {
+                year: 'numeric', month: 'numeric', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
             dEl.classList.remove('text-slate-400', 'italic');
         } else {
             dEl.innerText = 'No Deadline';
@@ -345,17 +449,44 @@
         const title = document.getElementById('task-title').value;
         const desc = document.getElementById('task-desc').value;
         const priority = document.getElementById('task-priority').value;
-        const deadline = document.getElementById('task-deadline').value;
+        const deadlineVal = document.getElementById('task-deadline').value;
         const assigned_to = document.getElementById('task-assignee').value;
 
-        if (!title) return alert('Title required');
+        let isValid = true;
+        if (!title.trim()) {
+            showInputError('task-error-msg', 'task-error-text', 'Title is required');
+            isValid = false;
+        }
+        if (!desc.trim()) {
+            showInputError('desc-error-msg', 'desc-error-text', 'Description is required');
+            isValid = false;
+        }
+        if (!assigned_to) {
+            document.getElementById('assignee-error-msg').classList.remove('hidden');
+            isValid = false;
+        }
+        if (!deadlineVal) {
+            document.getElementById('deadline-error-msg').classList.remove('hidden');
+            isValid = false;
+        }
+
+        if (!isValid) return;
+
+        // Convert Deadline to ISO String respecting Local Time
+        // Flatpickr gives "YYYY-MM-DD HH:mm" (local)
+        // new Date("YYYY-MM-DD HH:mm") creates a local date object.
+        // .toISOString() converts that local instant to UTC ISO string.
+        // This ensures Supabase receives the correct UTC equivalent of the user's local time.
+        const deadlineISO = new Date(deadlineVal).toISOString();
 
         const res = await fetch('/api/tasks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 project_id: PROJECT_ID,
-                title, description: desc, priority, deadline, assigned_to
+                title, description: desc, priority,
+                deadline: deadlineISO,
+                assigned_to
             })
         });
 
@@ -364,10 +495,16 @@
             loadTasks();
             // Reset
             document.getElementById('task-title').value = '';
+            document.getElementById('task-desc').value = '';
         } else {
             const err = await res.json();
-            alert('Error creating task: ' + (err.error || 'Unknown error'));
+            showInputError('task-error-msg', 'task-error-text', err.error || 'Unknown error');
         }
+    }
+
+    function showInputError(containerId, textId, msg) {
+        document.getElementById(textId).innerText = msg;
+        document.getElementById(containerId).classList.remove('hidden');
     }
 
     async function moveTask(taskId, currentStatus) {
