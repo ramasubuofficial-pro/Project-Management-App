@@ -135,9 +135,9 @@
             id="sidebar">
             <!-- Brand -->
             <div class="h-24 flex items-center px-6 border-b border-emerald-50">
-                <a href="/" class="group flex items-center">
-                    <img src="{{ url_for('static', filename='images/logo_final.jpg') }}" alt="DigiAnchorz"
-                        class="h-16 w-auto object-contain transform group-hover:scale-105 transition duration-300">
+                <a href="/" class="group flex items-center w-full">
+                    <img src="{{ url_for('static', filename='images/logo_v4_transparent.png') }}" alt="DigiAnchorz"
+                        class="h-16 w-full object-contain transform group-hover:scale-105 transition duration-300">
                 </a>
             </div>
 
@@ -523,6 +523,70 @@
     <!-- Core Application Logic (Inlined) -->
     <script>
         console.log("Antigravity PM: Inline Logic Loaded");
+
+        // --- PWA Installation Logic ---
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent the mini-infobar from appearing on mobile
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            deferredPrompt = e;
+            // Update UI notify the user they can install the PWA
+            showInstallPromotion();
+            console.log("PWA Install Prompt Captured");
+        });
+
+        function showInstallPromotion() {
+            // Check if already installed or if explicit logic prevents duplicate prompts
+            if (localStorage.getItem('pwa_dismissed')) return;
+
+            const toast = document.createElement('div');
+            toast.id = 'pwa-install-toast';
+            toast.className = 'fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-xl shadow-2xl border border-emerald-100 flex items-center space-x-4 z-[2000] animate-bounce-in';
+            toast.innerHTML = `
+                <div class="bg-emerald-100 p-2 rounded-lg">
+                    <img src="{{ url_for('static', filename='images/company_icon.jpg') }}" class="w-8 h-8 rounded-md" alt="icon">
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-800 text-sm">Install App</h4>
+                    <p class="text-xs text-slate-500">For a better experience</p>
+                </div>
+                <div class="flex space-x-2">
+                     <button onclick="dismissInstall()" class="text-xs text-slate-400 hover:text-slate-600 px-2">Later</button>
+                     <button onclick="installPWA()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-lg shadow-emerald-500/30">Install</button>
+                </div>
+            `;
+            document.body.appendChild(toast);
+        }
+
+        async function installPWA() {
+            const toast = document.getElementById('pwa-install-toast');
+            if (toast) toast.remove();
+
+            if (!deferredPrompt) {
+                return;
+            }
+            // Show the install prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+            deferredPrompt = null;
+        }
+
+        function dismissInstall() {
+            const toast = document.getElementById('pwa-install-toast');
+            if (toast) toast.remove();
+            localStorage.setItem('pwa_dismissed', 'true');
+        }
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA was installed');
+            deferredPrompt = null;
+            const toast = document.getElementById('pwa-install-toast');
+            if (toast) toast.remove();
+        });
+
 
         // --- Helpers ---
         function toggleSidebar() {

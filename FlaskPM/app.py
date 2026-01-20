@@ -65,6 +65,7 @@ def create_app():
     import requests
     from flask import request, jsonify
 
+    # Reverse Geocode API (OSM Fallback) - Zoom 18
     @app.route("/api/reverse-geocode")
     def reverse_geocode():
         lat = request.args.get("lat")
@@ -79,9 +80,8 @@ def create_app():
             "format": "json",
             "lat": lat,
             "lon": lon,
-            "zoom": 19,
-            "addressdetails": 1,
-            "extratags": 1
+            "zoom": 18,
+            "addressdetails": 1
         }
 
         try:
@@ -89,35 +89,70 @@ def create_app():
             data = r.json()
             addr = data.get("address", {})
 
-            # ✅ INDIA-OPTIMIZED AREA RESOLUTION
-            area = (
-                addr.get("suburb")
-                or addr.get("neighbourhood")
+            # Extract highly granular parts (PagarBook style)
+            # Priority: House/Building -> Specific Place (Shop, College) -> Road -> Area -> City
+            
+            house_number = addr.get("house_number")
+            
+            # Specific place names
+            place_name = (
+                addr.get("amenity") 
+                or addr.get("building") 
+                or addr.get("shop") 
+                or addr.get("office") 
+                or addr.get("leisure")
+                or addr.get("tourism")
+                or addr.get("name") # Generic name fallback
+            )
+            
+            road = addr.get("road")
+            
+            suburb = (
+                addr.get("neighbourhood")
+                or addr.get("suburb")
                 or addr.get("residential")
                 or addr.get("quarter")
+                or addr.get("hamlet")
+                or addr.get("locality")
                 or addr.get("city_district")
-                or addr.get("county")
-                or addr.get("village")
-                or addr.get("road")
-                or ""
             )
-
-            city = (
+            
+            city_town = (
                 addr.get("city")
                 or addr.get("town")
+                or addr.get("village")
                 or addr.get("municipality")
-                or addr.get("county")
-                or ""
             )
+            
+            district = (
+                addr.get("state_district")
+                or addr.get("city_district")
+                or addr.get("county")
+            )
+            
+            state = addr.get("state")
+            postcode = addr.get("postcode")
 
-            state = addr.get("state") or ""
+            # Build list with specific header parts first
+            parts = []
+            if house_number: parts.append(str(house_number))
+            if place_name: parts.append(place_name)
+            if road: parts.append(road)
+            if suburb: parts.append(suburb)
+            if city_town: parts.append(city_town)
+            if district: parts.append(district)
+            if state: parts.append(state)
+            if postcode: parts.append(postcode)
 
-            # Deduplicate
-            if area == city:
-                area = ""
+            # Deduplicate preserving order (e.g. if Place Name == Road, don't show it twice)
+            seen = set()
+            clean_parts = []
+            for p in parts:
+                if p and p not in seen:
+                    clean_parts.append(p)
+                    seen.add(p)
 
-            parts = [area, city, state]
-            location = ", ".join([p for p in parts if p])
+            location = ", ".join(clean_parts)
 
             if location:
                 return jsonify({"location": location})
@@ -140,3 +175,4 @@ if __name__ == "__main__":
         start_scheduler()
         
     app.run(debug=True, port=5000)
+

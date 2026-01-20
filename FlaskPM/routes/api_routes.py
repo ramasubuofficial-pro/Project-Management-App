@@ -421,8 +421,126 @@ def delete_task(task_id):
         print(f"Error deleting task: {e}")
         return jsonify({"error": str(e)}), 400
 
+# ---------------- COMMENTS ----------------
+@api_bp.route('/tasks/<task_id>/comments', methods=['GET'])
+def get_task_comments(task_id):
+    user_id = get_current_user_id()
+    if not user_id: return jsonify([]), 401
+    try:
+        res = supabase.table('comments').select('*, user:user_id(full_name, avatar_url)').eq('task_id', task_id).order('created_at', desc=False).execute()
+        return jsonify(res.data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
-# ---------------- NOTIFICATIONS ----------------
+@api_bp.route('/tasks/<task_id>/comments', methods=['POST'])
+def add_task_comment(task_id):
+    user_id = get_current_user_id()
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json
+    content = data.get('content')
+    if not content: return jsonify({"error": "Content required"}), 400
+    
+    try:
+        # Insert Comment
+        res = supabase.table('comments').insert({
+            'task_id': task_id,
+            'user_id': user_id,
+            'content': content
+        }).execute()
+        comment = res.data[0]
+        
+        # Notify Task Participants (Assignee + Creator)
+        # 1. Fetch Task Details
+        t_res = supabase.table('tasks').select('assigned_to, created_by, title, project_id').eq('id', task_id).single().execute()
+        task = t_res.data
+        
+        targets = set()
+        if task.get('assigned_to') and task.get('assigned_to') != user_id: targets.add(task['assigned_to'])
+        if task.get('created_by') and task.get('created_by') != user_id: targets.add(task['created_by'])
+        
+        # Get Commenter Name
+        user_data = session.get('user', {})
+        commenter_name = user_data.get('user_metadata', {}).get('full_name', 'Someone')
+
+        broadcast_notification(
+            title="New Comment",
+            message=f"{commenter_name} commented on [{task['title']}]: {content[:30]}...",
+            link=f"/projects/{task.get('project_id')}",
+            recipient_ids=list(targets)
+        )
+
+        return jsonify(comment), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ---------------- ATTACHMENTS ----------------
+@api_bp.route('/tasks/<task_id>/attachments', methods=['GET'])
+def get_task_attachments(task_id):
+    user_id = get_current_user_id()
+    if not user_id: return jsonify([]), 401
+    try:
+        # Check if table exists by trying to select. 
+        # If user hasn't run the SQL, this will fail gracefully.
+        res = supabase.table('task_attachments').select('*').eq('task_id', task_id).order('created_at', desc=True).execute()
+        return jsonify(res.data)
+    except Exception as e:
+        # If table doesn't exist, return empty list (UI handles empty state)
+        print(f"Attachment Fetch Error (Table missing?): {e}")
+        return jsonify([])
+
+@api_bp.route('/tasks/<task_id>/attachments', methods=['POST'])
+def upload_task_attachment(task_id):
+    user_id = get_current_user_id()
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+        
+    try:
+        # 1. Upload to Supabase Storage
+        # Bucket: 'task-attachments' (Must be created in Supabase Dashboard!)
+        file_ext = file.filename.split('.')[-1]
+        unique_filename = f"{task_id}/{uuid.uuid4()}.{file_ext}"
+        file_content = file.read()
+        
+        # Upload
+        storage_res = supabase.storage.from_('task-attachments').upload(
+            path=unique_filename,
+            file=file_content,
+            file_options={"content-type": file.content_type}
+        )
+        
+        # 2. Get Public URL
+        # Assuming bucket is public
+        public_url = supabase.storage.from_('task-attachments').get_public_url(unique_filename)
+        
+        # 3. Insert into DB Table
+        # Use Admin Client (Service Role) to bypass RLS policies
+        admin_client = get_supabase_admin()
+        
+        if not admin_client:
+            print("CRITICAL: Admin client not available for upload. Check SUPABASE_SERVICE_KEY.")
+            return jsonify({"error": "Server Configuration Error: Missing Admin Privileges"}), 500
+
+        db_res = admin_client.table('task_attachments').insert({
+            'task_id': int(task_id), # Ensure int/bigint
+            'user_id': user_id,
+            'file_name': file.filename,
+            'file_url': public_url,
+            'file_type': file_ext
+        }).execute()
+        
+        return jsonify(db_res.data[0]), 201
+        
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        return jsonify({"error": f"Upload failed: {str(e)}"}), 400
 @api_bp.route("/notifications", methods=["GET"])
 def get_notifications():
     user_id = get_current_user_id()

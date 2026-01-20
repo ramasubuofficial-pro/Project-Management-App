@@ -2,6 +2,21 @@
 
 {% block title %}DIGIANCHORZ - Attendance{% endblock %}
 
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+    /* Fix Leaflet Map Z-Index context */
+    .leaflet-container {
+        z-index: 40 !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-8">
     <!-- Header -->
@@ -98,14 +113,22 @@
     <!-- LOCATION CONFIRM MODAL -->
     <div id="loc-modal"
         class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div class="bg-white rounded-2xl shadow-xl p-6 w-96 max-w-full m-4">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-[480px] max-w-full m-4">
             <h3 class="text-xl font-bold text-slate-800 mb-2">Confirm Location</h3>
             <p class="text-sm text-slate-500 mb-4">
-                We detected the following location. Please confirm if this is correct.
+                Please verify your exact location on the map.
             </p>
 
+            <!-- Map Container -->
+            <div id="map-container"
+                class="w-full h-48 rounded-xl bg-slate-100 mb-4 border border-slate-200 relative overflow-hidden">
+                <!-- Leaflet Map renders here -->
+                <div class="absolute inset-0 flex items-center justify-center text-slate-400 text-xs">Loading Map...
+                </div>
+            </div>
+
             <div id="loc-display"
-                class="w-full text-sm p-4 rounded-xl mb-6 bg-emerald-50 text-emerald-800 font-medium flex items-center justify-center space-x-2 border border-emerald-100">
+                class="w-full text-sm p-3 rounded-xl mb-6 bg-emerald-50 text-emerald-800 font-medium flex items-center justify-start space-x-2 border border-emerald-100">
                 <svg class="w-5 h-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor"
                     viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -113,7 +136,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
                 </svg>
-                <span id="loc-text" class="text-center break-words">Detecting location...</span>
+                <span id="loc-text" class="text-left break-words line-clamp-2">Detecting...</span>
             </div>
 
             <div class="flex space-x-3">
@@ -162,22 +185,18 @@
     })();
 
     let currentStatus = 'none'; // none, punched_in, completed
-    let pendingLocation = ''; // Store detected location
+    let loadingMap = null; // Store map instance
+    let mapMarker = null;  // Store marker instance
+    let accuracyCircle = null; // Store accuracy circle
 
     function safeParseTime(isoStr) {
         if (!isoStr) return '-';
         let cleanStr = isoStr;
-
-        // Only append Z if it looks naive (no Z, no +offset, no -offset at end)
-        // Check if it ends in Z
         const endsInZ = cleanStr.toUpperCase().endsWith('Z');
-        // Check for timezone offset pattern at the end like +05:30 or -0400
         const hasOffset = /[+-]\d{2}:?\d{2}$/.test(cleanStr);
-
         if (!endsInZ && !hasOffset) {
             cleanStr += 'Z';
         }
-
         const d = new Date(cleanStr);
         if (isNaN(d.getTime())) return 'Invalid Date';
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -193,17 +212,15 @@
             const res = await fetch('/api/attendance/today');
             if (res.status === 401) window.location.href = '/login';
 
-            const data = await res.json(); // returns null if no record, or object
+            const data = await res.json();
 
             if (!data) {
-                // Not punched in yet
                 currentStatus = 'none';
                 txt.innerText = "Punch In";
                 badge.innerText = "Not Checked In";
                 badge.className = "px-4 py-1 rounded-full text-sm font-semibold bg-slate-200 text-slate-600";
                 btn.disabled = false;
             } else if (data.punch_out) {
-                // Completed
                 currentStatus = 'completed';
                 txt.innerText = "Completed";
                 badge.innerText = "Day Completed";
@@ -212,7 +229,6 @@
                 btn.disabled = true;
                 btn.classList.add('opacity-50', 'cursor-not-allowed');
             } else {
-                // Punched In
                 currentStatus = 'punched_in';
                 txt.innerText = "Punch Out";
                 badge.innerText = "Checked In";
@@ -228,44 +244,118 @@
         }
     }
 
-    // Helper: Promisified Geolocation with Fallback
     function getPositionSafe() {
         return new Promise((resolve, reject) => {
             if (!navigator.geolocation) {
                 reject(new Error("Geolocation not supported"));
                 return;
             }
-
-            // 1. Try High Accuracy (GPS) - Timeout 20s
+            // 1. Try High Accuracy (GPS)
             navigator.geolocation.getCurrentPosition(
                 (pos) => resolve(pos),
                 (err) => {
                     console.warn("High Accuracy Geo failed. Retrying Low Accuracy...", err);
-                    // 2. Fallback: Low Accuracy (WiFi/IP) - Timeout 20s
+                    // 2. Fallback: Low Accuracy
                     navigator.geolocation.getCurrentPosition(
                         (pos) => resolve(pos),
                         (errFinal) => reject(errFinal),
-                        { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 }
+                        { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
                     );
                 },
-                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
             );
         });
     }
 
-    // CONFIGURATION: Enter your Google Maps API Key here for better accuracy
-    // If empty, it falls back to free OpenStreetMap (less accurate for Indian villages)
-    const GOOGLE_API_KEY = 'AIzaSyAdf69fjj_RBDuEliQSLGOqm0HCu9NvhtY';
+    // Initialize Map (Lazy Load)
+    function initMap(lat, lon, accuracy) {
+        if (!loadingMap) {
+            loadingMap = L.map('map-container').setView([lat, lon], 16);
 
-    // Step 1: Detect Location & Open Modal
-    async function resolveLocationName(lat, lon) {
-        try {
-            const res = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`);
-            const data = await res.json();
-            return data.location;
-        } catch {
-            return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            // OpenStreetMap Tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(loadingMap);
+        } else {
+            loadingMap.setView([lat, lon], 16);
         }
+
+        // Add/Update Marker
+        if (mapMarker) loadingMap.removeLayer(mapMarker);
+        mapMarker = L.marker([lat, lon]).addTo(loadingMap);
+
+        // Add/Update Accuracy Circle
+        if (accuracyCircle) loadingMap.removeLayer(accuracyCircle);
+        accuracyCircle = L.circle([lat, lon], {
+            color: 'emerald',
+            fillColor: '#10b981',
+            fillOpacity: 0.2,
+            radius: accuracy || 20
+        }).addTo(loadingMap);
+
+        // Force Reflow for Modal
+        setTimeout(() => {
+            loadingMap.invalidateSize();
+        }, 300);
+    }
+
+    async function resolveLocationName(lat, lon) {
+        // Direct Client-Side Call for Speed (OSM)
+        try {
+            const osmRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
+                headers: { "Accept-Language": "en-IN" }
+            });
+
+            if (osmRes.ok) {
+                const data = await osmRes.json();
+                const a = data.address || {};
+
+                // Manual Construction (Strict) to ensure Suburb/Amenity is picked up
+                let parts = [];
+
+                // 1. Precise Point
+                if (a.house_number) parts.push(a.house_number);
+                if (a.amenity) parts.push(a.amenity);
+                else if (a.building) parts.push(a.building);
+                else if (a.establishment) parts.push(a.establishment);
+                else if (a.office) parts.push(a.office);
+                else if (a.shop) parts.push(a.shop);
+                else if (a.name) parts.push(a.name);
+
+                // 2. Street
+                if (a.road) parts.push(a.road);
+
+                // 3. Area / Suburb (Critical for user request)
+                // Check all variations of local area keys
+                const area = a.suburb || a.neighbourhood || a.residential || a.quarter || a.hamlet || a.locality || a.city_district;
+                if (area) parts.push(area);
+
+                // 4. City / Admin
+                if (a.city || a.town || a.village || a.municipality) parts.push(a.city || a.town || a.village || a.municipality);
+                if (a.state_district) parts.push(a.state_district);
+                if (a.state) parts.push(a.state);
+                if (a.postcode) parts.push(a.postcode);
+
+                // Deduplicate items
+                let cleanParts = [];
+                let seen = new Set();
+                parts.forEach(p => {
+                    if (p && !seen.has(p)) {
+                        cleanParts.push(p);
+                        seen.add(p);
+                    }
+                });
+
+                if (cleanParts.length > 0) return cleanParts.join(", ");
+
+                // Fallback to display_name
+                if (data.display_name) return data.display_name;
+            }
+        } catch (e) {
+            console.warn("OSM Geo failed", e);
+        }
+
+        return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     }
 
     async function handlePunch() {
@@ -277,7 +367,7 @@
         const originalText = txt.innerText;
         txt.innerText = "Locating...";
 
-        let finalLat, finalLong, finalSource = 'GPS';
+        let finalLat, finalLong;
 
         try {
             // Get Coords
@@ -287,19 +377,22 @@
             const acc = pos.coords.accuracy;
 
             if (acc > 5000) showToast(`Low Accuracy (${Math.round(acc)}m). Use Wi-Fi/GPS.`, "warning");
-            finalSource = `Acc: ${Math.round(acc)}m`;
+
+            let finalSource = `Acc: ${Math.round(acc)}m`;
 
             let locationStr = `${finalLat.toFixed(5)}, ${finalLong.toFixed(5)}`;
-
-            // Reverse Geocode
+            // Reverse Geocode Logic
             locationStr = await resolveLocationName(finalLat, finalLong);
 
             // DEBUG INFO for user
             document.getElementById('loc-debug').innerText = `Source: ${finalSource} | ${finalLat.toFixed(4)}, ${finalLong.toFixed(4)}`;
 
-            // OPEN MODAL with value
+            // OPEN MODAL
             document.getElementById('loc-text').innerText = locationStr;
             document.getElementById('loc-modal').classList.remove('hidden');
+
+            // Initialize Map
+            initMap(finalLat, finalLong, acc);
 
             // Re-enable button underneath (in case they cancel)
             btn.disabled = false;
@@ -322,9 +415,8 @@
         document.getElementById('loc-modal').classList.add('hidden');
     }
 
-    // Step 2: Confirm & Send to Server
     async function confirmPunch() {
-        const finalLoc = document.getElementById('loc-text').innerText; // Read from input
+        const finalLoc = document.getElementById('loc-text').innerText;
         if (!finalLoc || finalLoc.trim().length < 3) {
             showToast("Please enter a valid location.", "warning");
             return;
@@ -336,7 +428,7 @@
         const txt = document.getElementById('punch-text');
 
         btn.disabled = true;
-        const originalText = txt.innerText; // "Punch In" or "Punch Out"
+        const originalText = txt.innerText;
         txt.innerText = "Punching...";
 
         try {

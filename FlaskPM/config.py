@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Force reload
+load_dotenv(override=True)
 
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev_secret_key')
@@ -13,3 +14,8 @@ class Config:
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
     SMTP_EMAIL = os.getenv('SMTP_EMAIL')
     SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
+
+    if not SUPABASE_SERVICE_KEY:
+        print("WARNING: SUPABASE_SERVICE_KEY not found in environment!")
+    else:
+        print(f"DEBUG: Service Key Loaded ({SUPABASE_SERVICE_KEY[:5]}...)")
