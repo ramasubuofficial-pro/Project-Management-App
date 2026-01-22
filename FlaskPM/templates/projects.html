@@ -105,7 +105,34 @@
     </div>
 </div>
 
+<!-- Confirmation Modal -->
+<div id="confirm-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center transform transition-all scale-100"
+        id="confirm-modal-content">
+        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 mb-4"
+            id="confirm-icon-bg">
+            <svg class="h-6 w-6 text-emerald-600" id="confirm-icon" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900 mb-2" id="confirm-title">Confirm Action</h3>
+        <p class="text-sm text-slate-500 mb-6" id="confirm-message">Are you sure you want to proceed?</p>
+        <div class="flex space-x-3 justify-center">
+            <button onclick="closeConfirmModal()"
+                class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium transition">Cancel</button>
+            <button onclick="executeConfirmedAction()"
+                class="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg font-medium shadow-lg shadow-emerald-500/30 transition"
+                id="confirm-btn-action">Confirm</button>
+        </div>
+    </div>
+</div>
+
 <script>
+    const CURRENT_USER_ROLE = "{{ role }}";
+    let pendingAction = null;
+
     document.addEventListener('DOMContentLoaded', () => {
         loadProjects();
         // Initialize Flatpickr for Projects
@@ -119,6 +146,13 @@
             minDate: "today",
             theme: "dark"
         });
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown-container')) {
+                document.querySelectorAll('[id^="dropdown-"]').forEach(el => el.classList.add('hidden'));
+            }
+        });
     });
 
     async function loadProjects() {
@@ -129,22 +163,52 @@
         grid.innerHTML = '';
         projects.forEach(p => {
             const card = document.createElement('div');
-            card.className = 'bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-all group cursor-pointer';
-            card.onclick = () => window.location.href = `/projects/${p.id}`;
+            card.className = 'bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-all group relative cursor-pointer';
+            card.onclick = (e) => {
+                if (window.getSelection().toString().length > 0) return;
+                window.location.href = `/projects/${p.id}`;
+            };
+
+            // Generate Status Badge
+            const statusColors = {
+                'Active': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+                'Completed': 'bg-blue-50 text-blue-600 border-blue-100',
+                'Archived': 'bg-slate-50 text-slate-500 border-slate-200'
+            };
+            const sColor = statusColors[p.status] || statusColors['Active'];
+
+            // Admin Menu
+            const adminMenu = CURRENT_USER_ROLE === 'Admin' ? `
+                <div class="absolute top-4 right-4 dropdown-container z-20" onclick="event.stopPropagation()">
+                    <button onclick="toggleDropdown(event, '${p.id}')" class="p-1 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition">
+                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                    <div id="dropdown-${p.id}" class="hidden absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 overflow-hidden">
+                        ${p.status !== 'Completed' ? `
+                        <button onclick="updateStatus(event, '${p.id}', 'Completed')" class="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-emerald-600 flex items-center transition">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Mark as Completed
+                        </button>` : `
+                        <button onclick="updateStatus(event, '${p.id}', 'Active')" class="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 flex items-center transition">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Re-activate Project
+                        </button>`}
+                    </div>
+                </div>
+            ` : '';
+
             card.innerHTML = `
+                ${adminMenu}
                 <div class="flex justify-between items-start mb-4">
                     <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-emerald-500/30">
                         ${p.title[0]}
                     </div>
-                    <div class="relative group-hover:block hidden">
-                        <button class="text-slate-300 hover:text-slate-600">•••</button>
-                    </div>
                 </div>
-                <h3 class="text-lg font-bold text-slate-800 mb-2 truncate">${p.title}</h3>
+                <h3 class="text-lg font-bold text-slate-800 mb-2 truncate pr-8">${p.title}</h3>
                 <p class="text-sm text-slate-500 line-clamp-2 mb-4 h-10">${p.description || 'No description provided.'}</p>
                 
                 <div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-50">
-                    <span class="text-xs font-semibold px-2 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
+                    <span class="text-xs font-semibold px-2 py-1 rounded-full border ${sColor}">
                         ${p.status}
                     </span>
                     <span class="text-xs text-slate-400">
@@ -154,6 +218,88 @@
             `;
             grid.appendChild(card);
         });
+    }
+
+    function toggleDropdown(e, id) {
+        e.stopPropagation();
+        // Close others
+        document.querySelectorAll('[id^="dropdown-"]').forEach(el => {
+            if (el.id !== `dropdown-${id}`) el.classList.add('hidden');
+        });
+        document.getElementById(`dropdown-${id}`).classList.toggle('hidden');
+    }
+
+    function updateStatus(e, id, status) {
+        e.stopPropagation();
+        toggleDropdown(e, id); // Close dropdown immediately
+
+        // Setup Modal
+        pendingAction = { id, status };
+
+        const title = document.getElementById('confirm-title');
+        const msg = document.getElementById('confirm-message');
+        const btn = document.getElementById('confirm-btn-action');
+        const iconBg = document.getElementById('confirm-icon-bg');
+        const icon = document.getElementById('confirm-icon');
+
+        if (status === 'Completed') {
+            title.innerText = 'Mark as Completed?';
+            msg.innerText = 'This will mark the project as finished and notify all members.';
+            btn.className = "px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg font-medium shadow-lg shadow-emerald-500/30 transition";
+            iconBg.className = "mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 mb-4";
+            icon.className = "h-6 w-6 text-emerald-600";
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+        } else {
+            title.innerText = 'Re-activate Project?';
+            msg.innerText = 'This will set the project status back to Active.';
+            btn.className = "px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium shadow-lg shadow-blue-500/30 transition";
+            iconBg.className = "mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4";
+            icon.className = "h-6 w-6 text-blue-600";
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />';
+        }
+
+        document.getElementById('confirm-modal').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('confirm-modal').classList.add('hidden');
+        pendingAction = null;
+    }
+
+    async function executeConfirmedAction() {
+        if (!pendingAction) return;
+
+        const { id, status } = pendingAction;
+
+        // Show loading state on button
+        const btn = document.getElementById('confirm-btn-action');
+        const originalText = btn.innerText;
+        btn.innerText = 'Processing...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/projects/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+            });
+
+            if (res.ok) {
+                showToast(`Project marked as ${status}`, 'success');
+                loadProjects();
+                closeConfirmModal();
+            } else {
+                const err = await res.json();
+                showToast(err.error || 'Failed to update status', 'error');
+                closeConfirmModal();
+            }
+        } catch (error) {
+            showToast('Network error', 'error');
+            closeConfirmModal();
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
     }
 
     async function loadTeamForSelect() {

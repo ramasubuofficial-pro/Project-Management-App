@@ -34,7 +34,14 @@ def tasks():
 @view_bp.route('/projects')
 @login_required
 def projects():
-    return render_template('projects.html', user=session['user'])
+    user_id = session['user']['id']
+    try:
+        user_res = supabase.table('users').select('role').eq('id', user_id).execute()
+        user_role = user_res.data[0]['role'] if user_res.data else 'Team Member'
+    except:
+        user_role = 'Team Member'
+        
+    return render_template('projects.html', user=session['user'], role=user_role)
 
 @view_bp.route('/calendar')
 @login_required
