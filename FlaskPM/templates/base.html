@@ -7,12 +7,19 @@
     <title>{% block title %}DigiAnchorz PM{% endblock %}</title>
 
     <!-- PWA Manifest & Meta -->
+    <!-- PWA Manifest & Meta -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="theme-color" content="#059669">
+
+    <!-- iOS Native Feel -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="icon" type="image/jpg" href="{{ url_for('static', filename='images/company_icon.jpg') }}">
+    <meta name="apple-mobile-web-app-title" content="DigiAnchorz">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/company_icon.jpg') }}">
+
+    <!-- Microsoft Tiles -->
+    <meta name="msapplication-TileColor" content="#059669">
+    <meta name="msapplication-TileImage" content="{{ url_for('static', filename='images/company_icon.jpg') }}">
 
     <!-- PWA Service Worker -->
     <script>
@@ -542,21 +549,29 @@
 
             const toast = document.createElement('div');
             toast.id = 'pwa-install-toast';
-            toast.className = 'fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-xl shadow-2xl border border-emerald-100 flex items-center space-x-4 z-[2000] animate-bounce-in';
+            toast.className = 'fixed bottom-0 left-0 right-0 md:left-auto md:right-6 md:bottom-6 md:w-96 bg-white p-6 md:rounded-2xl rounded-t-2xl shadow-2xl border border-emerald-100 z-[2000] transform transition-transform duration-500 translate-y-full';
             toast.innerHTML = `
-                <div class="bg-emerald-100 p-2 rounded-lg">
-                    <img src="{{ url_for('static', filename='images/company_icon.jpg') }}" class="w-8 h-8 rounded-md" alt="icon">
+                <div class="flex items-start space-x-4">
+                    <img src="{{ url_for('static', filename='images/company_icon.jpg') }}" class="w-12 h-12 rounded-xl shadow-md" alt="icon">
+                    <div class="flex-1">
+                        <h4 class="font-bold text-slate-800 text-base">Install DigiAnchorz</h4>
+                        <p class="text-xs text-slate-500 mt-1">Add to Home Screen for quick access and full-screen experience.</p>
+                    </div>
+                    <button onclick="dismissInstall()" class="text-slate-400 hover:text-slate-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
                 </div>
-                <div>
-                    <h4 class="font-bold text-slate-800 text-sm">Install App</h4>
-                    <p class="text-xs text-slate-500">For a better experience</p>
-                </div>
-                <div class="flex space-x-2">
-                     <button onclick="dismissInstall()" class="text-xs text-slate-400 hover:text-slate-600 px-2">Later</button>
-                     <button onclick="installPWA()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-lg shadow-emerald-500/30">Install</button>
+                <div class="mt-4 flex space-x-3">
+                     <button onclick="installPWA()" class="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-500/30 transition active:scale-95">Install App</button>
+                     <button onclick="dismissInstall()" class="flex-1 py-2.5 bg-slate-100 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-200 transition">Not Now</button>
                 </div>
             `;
             document.body.appendChild(toast);
+
+            // Trigger animation
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-full');
+            });
         }
 
         async function installPWA() {
