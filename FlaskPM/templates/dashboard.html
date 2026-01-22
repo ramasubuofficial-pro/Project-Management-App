@@ -64,6 +64,41 @@
             </div>
         </div>
     </div>
+    <!-- Admin Insights (Only for Admin) -->
+    {% if role == 'Admin' %}
+    <div class="space-y-6 pt-6 border-t border-slate-200/60">
+        <div class="flex items-center space-x-2">
+            <h2 class="text-xl font-bold text-slate-800">Team Insights</h2>
+            <span class="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">ADMIN VIEW</span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Individual Performance (Bar Chart) -->
+            <div class="glass-panel p-6 rounded-3xl h-[400px] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800">Individual Performance</h3>
+                    <span class="text-xs text-slate-500 font-medium">Tasks Completed vs Total</span>
+                </div>
+                <div class="flex-1 w-full relative">
+                    <canvas id="teamMemberChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Project Progress (Horizontal Bar) -->
+            <div class="glass-panel p-6 rounded-3xl h-[400px] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800">Project Progress</h3>
+                    <span class="text-xs text-slate-500 font-medium">Completion Rate</span>
+                </div>
+                <div class="flex-1 w-full relative">
+                    <canvas id="projectProgressChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
 </div>
 
 <script>
@@ -82,6 +117,12 @@
 
             if (!statsData.error) {
                 renderCharts(statsData.charts);
+                // Check for Admin Data which is at root of response for now based on API code
+                // Actually my API code put everything in the response root, but 'charts' key has standard charts.
+                // admin keys are 'member_stats' and 'project_performance' at root.
+                if (statsData.member_stats) {
+                    renderAdminCharts(statsData);
+                }
             }
 
             // Load Projects List
@@ -134,10 +175,10 @@
     }
 
     function showNoData(canvasId, message) {
-        const padding = document.getElementById(canvasId).parentElement;
-        // canvas parent is 'relative w-full ...'
-        // Hide canvas? No, overlay.
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
 
+        const padding = canvas.parentElement;
         // Remove existing overlay if any
         const existing = padding.querySelector('.no-data-overlay');
         if (existing) existing.remove();
@@ -151,7 +192,7 @@
         padding.appendChild(overlay);
 
         // Also fade out canvas
-        document.getElementById(canvasId).style.opacity = '0.1';
+        canvas.style.opacity = '0.1';
     }
 
     function renderCharts(data) {
@@ -219,17 +260,12 @@
             });
         }
 
-        // 3. Performance (Line) - always render even if 0, but if all 0 maybe show empty?
+        // 3. Performance (Line)
         const totalPerf = data.trend.data.reduce((a, b) => a + b, 0);
         const ctx3 = document.getElementById('performanceChart').getContext('2d');
 
         if (totalPerf === 0) {
-            // For trend, even if 0, graph is okay, but maybe boring. 
-            // Let's show graph but flattened.
-            // Or overlay.
-            // User prefers "showing", implying they want to see the grid/structure even if empty. From my experience blank is bad.
-            // But screenshot showed BLANK. 
-            // ChartJS usually renders correct axes for 0.
+            // Optional: Show empty state or just flat line
         }
 
         // Gradient fill
@@ -263,6 +299,91 @@
                 },
                 plugins: {
                     legend: { display: false }
+                }
+            }
+        });
+    }
+
+    function renderAdminCharts(data) {
+        // Safe check if elements exist (in case Jinja didn't render them but API sent data, though unlikely)
+        const ctxMember = document.getElementById('teamMemberChart');
+        const ctxProj = document.getElementById('projectProgressChart');
+
+        if (!ctxMember || !ctxProj) return;
+
+        // 1. Team/Individual Performance
+        // Stacked Bar: Completed vs Pending
+        const members = data.member_stats;
+        const labels = members.map(m => m.name);
+        const completed = members.map(m => m.completed);
+        const pending = members.map(m => m.pending);
+
+        new Chart(ctxMember, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Completed',
+                        data: completed,
+                        backgroundColor: '#10b981', // Emerald
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Pending',
+                        data: pending,
+                        backgroundColor: '#cbd5e1', // Slate
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1 } }
+                },
+                plugins: {
+                    legend: { position: 'top', align: 'end' }
+                }
+            }
+        });
+
+        // 2. Project Progress
+        const projects = data.project_performance;
+        const pLabels = projects.map(p => p.title);
+        const pProgress = projects.map(p => p.progress);
+
+        new Chart(ctxProj, {
+            type: 'bar',
+            indexAxis: 'y', // Horizontal
+            data: {
+                labels: pLabels,
+                datasets: [{
+                    label: 'Completion %',
+                    data: pProgress,
+                    backgroundColor: pProgress.map(v => v >= 100 ? '#10b981' : (v > 50 ? '#f59e0b' : '#3b82f6')), // Green, Amber, Blue
+                    borderRadius: 4,
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { max: 100, beginAtZero: true },
+                    y: { grid: { display: false } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                return context.parsed.x + '%';
+                            }
+                        }
+                    }
                 }
             }
         });

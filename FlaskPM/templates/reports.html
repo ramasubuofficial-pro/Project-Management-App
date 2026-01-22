@@ -106,6 +106,14 @@
         <h3 class="font-bold text-lg text-slate-800">Team Attendance Log</h3>
 
         <div class="flex items-center space-x-3">
+            <a id="admin-export-btn" href="/api/admin/export/attendance"
+                class="text-emerald-600 hover:text-emerald-800 text-sm font-medium flex items-center bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Download Report
+            </a>
             <select id="admin-user-filter" onchange="loadAdminAttendance()"
                 class="px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
                 <option value="">All Members</option>
@@ -211,6 +219,14 @@
         const tbody = document.getElementById('admin-att-body');
         const filterEl = document.getElementById('admin-user-filter');
         const userId = filterEl ? filterEl.value : '';
+
+        // Update Export Link
+        const exportBtn = document.getElementById('admin-export-btn');
+        if (exportBtn) {
+            exportBtn.href = userId
+                ? `/api/admin/export/attendance?user_id=${userId}`
+                : `/api/admin/export/attendance`;
+        }
 
         tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Loading records...</td></tr>';
 

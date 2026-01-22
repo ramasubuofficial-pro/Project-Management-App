@@ -605,7 +605,7 @@ def get_stats():
         projects_map = {p["id"]: p["title"] for p in p_res.data}
         
         # Filter stats based on role
-        query = supabase.table("tasks").select("id, project_id, status, created_at")
+        query = supabase.table("tasks").select("id, project_id, status, created_at, assigned_to")
         
         if role != 'Admin':
             # Non-Admins: Only see THEIR assigned tasks in stats
@@ -643,7 +643,7 @@ def get_stats():
                 if c_date in activity_trend:
                     activity_trend[c_date] += 1
                     
-        return jsonify({
+        response_payload = {
             "total_projects": total_projects,
             "total_tasks": total_tasks,
             "task_stats": status_counts,
@@ -652,7 +652,63 @@ def get_stats():
                 "projects": {"labels": [x[0] for x in sorted_proj], "data": [x[1] for x in sorted_proj]},
                 "trend": {"labels": dates, "data": [activity_trend[d] for d in dates]}
             }
-        })
+        }
+        
+        # --- ADMIN INSIGHTS ---
+        if role == 'Admin':
+            # 1. Individual Performance (Tasks Completed vs Total by User)
+            # Need map of user_id -> name
+            users_res = supabase.table("users").select("id, full_name, email").execute()
+            users_map = {u['id']: u.get('full_name') or u.get('email') or 'Unknown' for u in users_res.data}
+            
+            member_stats = {} # {uid: {name, completed, total}}
+            
+            for t in tasks:
+                uid = t.get('assigned_to')
+                if uid:
+                    if uid not in member_stats:
+                        member_stats[uid] = {'name': users_map.get(uid, 'Unknown'), 'completed': 0, 'total': 0, 'pending': 0}
+                    
+                    member_stats[uid]['total'] += 1
+                    if t.get('status') == 'Completed':
+                        member_stats[uid]['completed'] += 1
+                    else:
+                        member_stats[uid]['pending'] += 1
+            
+            # Convert to list
+            response_payload['member_stats'] = list(member_stats.values())
+            
+            # 2. Team Performance by Project (Progress % per project)
+            # We already have tasks and projects_map
+            project_stats = {} # {pid: {title, total, completed}}
+            
+            for t in tasks:
+                pid = t.get('project_id')
+                if pid:
+                    if pid not in project_stats:
+                         pname = projects_map.get(pid, 'Unknown Project')
+                         project_stats[pid] = {'title': pname, 'total': 0, 'completed': 0}
+                    
+                    project_stats[pid]['total'] += 1
+                    if t.get('status') == 'Completed':
+                        project_stats[pid]['completed'] += 1
+            
+            # Calculate %
+            final_proj_perf = []
+            for pid, pdata in project_stats.items():
+                pct = round((pdata['completed'] / pdata['total']) * 100) if pdata['total'] > 0 else 0
+                final_proj_perf.append({
+                    'title': pdata['title'],
+                    'progress': pct,
+                    'total': pdata['total'],
+                    'completed': pdata['completed']
+                })
+            
+            # Sort by progress desc
+            final_proj_perf.sort(key=lambda x: x['progress'], reverse=True)
+            response_payload['project_performance'] = final_proj_perf
+
+        return jsonify(response_payload)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -738,6 +794,7 @@ def get_export_csv():
         for t in tasks:
             writer.writerow([t.get('title'), t.get('status'), t.get('priority'), t.get('deadline'), t.get('created_at')])
             
+            
         return Response(
             output.getvalue(),
             mimetype="text/csv",
@@ -745,6 +802,59 @@ def get_export_csv():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+@api_bp.route('/admin/export/attendance', methods=['GET'])
+def export_admin_attendance_csv():
+    user = session.get('user', {})
+    if user.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    user_id = request.args.get('user_id')
+
+    try:
+        # Fetch Attendance Joined with Users
+        query = supabase.table('attendance').select('*, user:users(full_name, email)').order('date', desc=True)
+        
+        if user_id:
+            query = query.eq('user_id', user_id)
+            
+        res = query.execute()
+        records = res.data
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Member Name', 'Email', 'Date', 'Punch In', 'Punch Out', 'Status', 'Total Hours', 'Location', 'Out Location'])
+        
+        for r in records:
+            u = r.get('user') or {}
+            name = u.get('full_name') or 'Unknown'
+            email = u.get('email') or ''
+            
+            # Simple Helper to cleanup ISO strings for CSV readability if desired
+            # keeping it simple for now
+            
+            writer.writerow([
+                name, 
+                email, 
+                r.get('date'), 
+                r.get('punch_in'), 
+                r.get('punch_out'), 
+                r.get('status'), 
+                r.get('total_hours'),
+                r.get('location', ''),
+                r.get('punch_out_location', '')
+            ])
+            
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-disposition": "attachment; filename=attendance_report.csv"}
+        )
+    except Exception as e:
+        print(f"Export Error: {e}")
+        return jsonify({"error": str(e)}), 400
+
+
 
 # --- AI CHAT ---
 @api_bp.route("/chat", methods=["POST"])
